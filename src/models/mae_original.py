@@ -25,11 +25,11 @@ from timm.models.swin_transformer import SwinTransformerBlock
 class MaskedAutoencoderViT(nn.Module):
     """ Masked Autoencoder with VisionTransformer backbone
     """
-    def __init__(self, img_size=224, patch_size=16, stride=10, in_chans=3,
+    def __init__(self, img_size=(1024, 128), patch_size=16, stride=10, in_chans=3,
                  embed_dim=1024, depth=24, num_heads=16,
                  decoder_embed_dim=512, decoder_depth=8, decoder_num_heads=16,
                  mlp_ratio=4., norm_layer=nn.LayerNorm, norm_pix_loss=False, 
-                 audio_exp=False, alpha=0.0, temperature=.2, mode=0, contextual_depth=8,
+                 audio_exp=True, alpha=0.0, temperature=.2, mode=0, contextual_depth=8,
                  use_custom_patch=False, split_pos=False, pos_trainable=False, use_nce=False, beta=4.0, decoder_mode=0,
                  mask_t_prob=0.6, mask_f_prob=0.5, mask_2d=False,
                  epoch=0, no_shift=False,
@@ -57,7 +57,7 @@ class MaskedAutoencoderViT(nn.Module):
         self.encoder_depth = depth
         self.contextual_depth = contextual_depth
         self.blocks = nn.ModuleList([
-            Block(embed_dim, num_heads, mlp_ratio, qkv_bias=True, qk_scale=None, norm_layer=norm_layer)
+            Block(embed_dim, num_heads, mlp_ratio, qkv_bias=True,  norm_layer=norm_layer)
             for i in range(depth)])
         self.norm = norm_layer(embed_dim)
 
@@ -110,7 +110,7 @@ class MaskedAutoencoderViT(nn.Module):
         else:
             # Transfomer
             self.decoder_blocks = nn.ModuleList([
-                Block(decoder_embed_dim, decoder_num_heads, mlp_ratio, qkv_bias=True, qk_scale=None, norm_layer=norm_layer)
+                Block(decoder_embed_dim, decoder_num_heads, mlp_ratio, qkv_bias=True,  norm_layer=norm_layer)
                 for i in range(decoder_depth)])
 
         self.decoder_norm = norm_layer(decoder_embed_dim)
@@ -147,6 +147,8 @@ class MaskedAutoencoderViT(nn.Module):
             pos_embed = get_2d_sincos_pos_embed_flexible(self.pos_embed.shape[-1], self.patch_embed.patch_hw, cls_token=True)    
         else:
             pos_embed = get_2d_sincos_pos_embed(self.pos_embed.shape[-1], int(self.patch_embed.num_patches**.5), cls_token=True)
+        
+
         self.pos_embed.data.copy_(torch.from_numpy(pos_embed).float().unsqueeze(0))
 
         if self.audio_exp:   
@@ -458,3 +460,6 @@ mae_vit_base_patch16 = mae_vit_base_patch16_dec512d8b  # decoder: 512 dim, 8 blo
 mae_vit_large_patch16 = mae_vit_large_patch16_dec512d8b  # decoder: 512 dim, 8 blocks
 mae_vit_huge_patch14 = mae_vit_huge_patch14_dec512d8b  # decoder: 512 dim, 8 blocks
 mae_vit_small_patch16 = mae_vit_small_patch16_dec512d8b # decoder: 512 dim, 8 blocks
+
+if __name__ == "__main__":
+    MaskedAutoencoderViT()

@@ -1,4 +1,5 @@
 import mne
+
 import scipy
 import scipy.signal
 
@@ -10,9 +11,13 @@ import torch
 from torch.utils.data import Dataset
 
 def get_edf_paths(data_path): 
+        
+        #make mne stop spamming the console
 
+        mne.set_log_level("WARNING")
+
+        #save the paths in a textfile
         edf_paths = []
-
         debug_file = "/home/schepasc/eeg-foundation/debug_paths"
 
         if os.path.exists(debug_file):
@@ -95,9 +100,18 @@ class EDFTESTDataset(Dataset):
         #for testing just take one spectrogram
         spg, channel = edf2spectrogram(path)[0]
 
-        #make it fit the mae transformer for now
+        #making it fit the dimensions wanted by MAE-transformer, padding it if sample is too short in time/ cutting if too long
+
         spg = spg[0:128, 0:1024]
-    
+        spg = np.transpose(spg)
+        expected_shape = (1024, 128)
+
+        if spg.shape != expected_shape:
+           
+           h, w = spg.shape
+           padding_size = 1024 - h
+           spg = np.pad(spg, ((padding_size,0), (0, 0)), mode='constant')
+           
         return spg
 
 

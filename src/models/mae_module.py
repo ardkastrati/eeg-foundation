@@ -25,11 +25,25 @@ class MAEModule(LightningModule):
             # this line allows to access init params with 'self.hparams' attribute
             # also ensures init params will be stored in ckpt
             self.save_hyperparameters(logger=False)
-
+            
             self.net = net
+            
 
     def forward(self, x):
+          
           loss, _, _,_ = self.net(x)
+          return loss
+
     def training_step(self, batch, batch_idx):
-          return self.foward(batch)
+          b, h, w = batch.shape
+          batch = batch.reshape(b,1,1024,128)
+          
+          
+          batch.to("cuda")
+          return self.forward(batch)
     
+    
+    def configure_optimizers(self):
+
+        return torch.optim.Adam(self.parameters(), lr = 0.001)
+

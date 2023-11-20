@@ -12,14 +12,14 @@ class EDFTESTDataModule(LightningDataModule):
 
     def __init__(
         self,
-        data_dir: str = "/itet-stor/schepasc/deepeye_storage/tueg/edf/000",
+        data_dir = "/itet-stor/schepasc/deepeye_storage/tueg/edf/000",
         batch_size: int = 64,
         num_workers: int = 0,
         pin_memory: bool = False,
     ) -> None: 
         
         super().__init__()
-
+        self.data_dir = data_dir
         self.batch_size = batch_size
         self.num_workers = num_workers
         self.save_hyperparameters(logger=False)
@@ -32,14 +32,14 @@ class EDFTESTDataModule(LightningDataModule):
 
         pass
 
-    def setup(self) -> None: 
+    def setup(self, stage= None) -> None: 
 
         
-        entire_dataset = custom_data.EDFTESTDataset(data_dir)
+        entire_dataset = custom_data.EDFTESTDataset(self.data_dir)
         train_size = int(0.8 * len(entire_dataset))
         val_size = len(entire_dataset) - train_size
 
-        self.train_dataset, self.test_dataset = torch.utils.data.random_split(full_dataset, [train_size, test_size])
+        self.train_dataset, self.test_dataset = torch.utils.data.random_split(entire_dataset, [train_size, val_size])
     
     def train_dataloader(self):
 
@@ -58,7 +58,7 @@ class EDFTESTDataModule(LightningDataModule):
         )
     
     def test_dataloader(self):
-        
+
         return DataLoader(
             self.val_dataset,
             batch_size = self.batch_size,
@@ -66,7 +66,7 @@ class EDFTESTDataModule(LightningDataModule):
         ) 
 
 
-    def teardown(self, stage: Optional[str] = None) -> None:
+    def teardown(self, stage) -> None:
         """Lightning hook for cleaning up after `trainer.fit()`, `trainer.validate()`,
         `trainer.test()`, and `trainer.predict()`.
 
@@ -75,14 +75,14 @@ class EDFTESTDataModule(LightningDataModule):
         """
         pass
 
-    def state_dict(self) -> Dict[Any, Any]:
+    def state_dict(self):
         """Called when saving a checkpoint. Implement to generate and save the datamodule state.
 
         :return: A dictionary containing the datamodule state that you want to save.
         """
         return {}
 
-    def load_state_dict(self, state_dict: Dict[str, Any]) -> None:
+    def load_state_dict(self, state_dict) -> None:
         """Called when loading a checkpoint. Implement to reload datamodule state given datamodule
         `state_dict()`.
 
