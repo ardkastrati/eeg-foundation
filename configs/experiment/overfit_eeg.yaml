@@ -1,0 +1,32 @@
+# @package _global_
+
+
+defaults:
+  - override /data: mae_test
+  - override /model: mae_small
+  - override /callbacks: null
+  - override /trainer: default
+
+
+trainer:
+
+  min_epochs: 50
+  max_epochs: 200
+  overfit_batches: 1
+
+data:
+  data_dir: "/home/schepasc/eeg-foundation/src/data/000_json"
+  batch_size : 8
+  window_size : 4.0
+  overlap : 0.25
+  min_duration : 1000
+  specific_sr : 256
+  random_sample : False
+  fixed_sample : True
+
+model: 
+ 
+  img_log_frq : 20
+
+  optimizer:
+    lr: 0.0002

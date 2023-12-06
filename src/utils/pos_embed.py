@@ -17,7 +17,7 @@ import torch
 # Transformer: https://github.com/tensorflow/models/blob/master/official/nlp/transformer/model_utils.py
 # MoCo v3: https://github.com/facebookresearch/moco-v3
 # --------------------------------------------------------
-def get_2d_sincos_pos_embed(embed_dim, grid_size, cls_token=False):
+def get_2d_sincos_pos_embed(embed_dim, grid_size, cls_token=False, chn_token=False):
     """
     grid_size: int of the grid height and width
     return:
@@ -35,7 +35,7 @@ def get_2d_sincos_pos_embed(embed_dim, grid_size, cls_token=False):
     return pos_embed
 
 
-def get_2d_sincos_pos_embed_flexible(embed_dim, grid_size, cls_token=False):
+def get_2d_sincos_pos_embed_flexible(embed_dim, grid_size, cls_token=False, chn_token=False):
     """
     grid_size: int of the grid height and width
     return:
@@ -50,6 +50,10 @@ def get_2d_sincos_pos_embed_flexible(embed_dim, grid_size, cls_token=False):
     grid = grid.reshape([2, 1, grid_size[0], grid_size[1]])
     pos_embed = get_2d_sincos_pos_embed_from_grid(embed_dim, grid)
     if cls_token:
+        pos_embed = np.concatenate([np.zeros([1, embed_dim]), pos_embed], axis=0)
+
+    #postional emb for channel token, for now 0, as is done with cls_token
+    if chn_token:
         pos_embed = np.concatenate([np.zeros([1, embed_dim]), pos_embed], axis=0)
     return pos_embed
 
@@ -81,8 +85,9 @@ def get_1d_sincos_pos_embed_from_grid(embed_dim, pos):
 
     emb_sin = np.sin(out) # (M, D/2)
     emb_cos = np.cos(out) # (M, D/2)
-
+   
     emb = np.concatenate([emb_sin, emb_cos], axis=1)  # (M, D)
+    
     return emb
 
 

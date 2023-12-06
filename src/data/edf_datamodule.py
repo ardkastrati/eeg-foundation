@@ -1,21 +1,28 @@
 import torch
 import os
 
-import src.data.foundation_loader as custom_data
+import src.data.edf_loader as custom_data
 
 
 from lightning import LightningDataModule
 from torch.utils.data import ConcatDataset, DataLoader, Dataset, random_split
 from torchvision.transforms import transforms
 
-class EDFTESTDataModule(LightningDataModule):
+class EDFDataModule(LightningDataModule):
 
     def __init__(
         self,
-        data_dir = "/itet-stor/schepasc/deepeye_storage/tueg/edf/000",
+        data_dir = "/home/schepasc/eeg-foundation/src/data/debug_json",
         batch_size: int = 64,
-        num_workers: int = 0,
+        num_workers: int = 1,
         pin_memory: bool = False,
+
+        window_size = 4.0,
+        overlap = 0.25,
+        min_duration = 1000,
+        specific_sr = 256,
+        random_sample = False,
+        fixed_sample = True
     ) -> None: 
         
         super().__init__()
@@ -23,6 +30,14 @@ class EDFTESTDataModule(LightningDataModule):
         self.batch_size = batch_size
         self.num_workers = num_workers
         self.save_hyperparameters(logger=False)
+
+        # specifics on how to load the spectrograms
+        self.window_size = window_size
+        self.overlap = overlap
+        self.min_duration = min_duration
+        self.specific_sr = specific_sr
+        self.random_sample = random_sample
+        self.fixed_sample = fixed_sample
 
         # data transformations
         self.transforms = transforms.ToTensor()
@@ -35,11 +50,20 @@ class EDFTESTDataModule(LightningDataModule):
     def setup(self, stage= None) -> None: 
 
         
-        entire_dataset = custom_data.EDFTESTDataset(self.data_dir)
-        train_size = int(0.8 * len(entire_dataset))
+        entire_dataset = custom_data.EDFDataset(
+            self.data_dir,
+            window_size=self.window_size,
+            overlap=self.overlap,
+            random_sample=self.random_sample,
+            fixed_sample=self.fixed_sample,
+            min_duration=self.min_duration)
+        #entire_dataset = custom_data.one_image_dataset()
+        train_size = int(1* len(entire_dataset))
+        print("TRAINSIZE IS:::::::::::::::::::::", train_size)
+        
         val_size = len(entire_dataset) - train_size
 
-        self.train_dataset, self.test_dataset = torch.utils.data.random_split(entire_dataset, [train_size, val_size])
+        self.train_dataset, self.val_dataset = torch.utils.data.random_split(entire_dataset, [train_size, val_size])
     
     def train_dataloader(self):
 

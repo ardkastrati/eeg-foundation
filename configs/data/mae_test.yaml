@@ -1,5 +1,5 @@
-_target_: src.data.edf_datamodule.EDFTESTDataModule
-data_dir: "/itet-stor/schepasc/deepeye_storage/tueg/edf/000"
-batch_size: 16 # Needs to be divisible by the number of devices (e.g., if in a distributed setup)
-num_workers: 0
+_target_: src.data.edf_datamodule.EDFDataModule
+data_dir: "/home/schepasc/eeg-foundation/src/data/debug_json"
+batch_size: 4 # Needs to be divisible by the number of devices (e.g., if in a distributed setup)
+num_workers: 1
 pin_memory: False

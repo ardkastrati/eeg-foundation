@@ -12,6 +12,7 @@
 from functools import partial
 from json import encoder
 
+import json
 import torch
 import torch.nn as nn
 
@@ -25,20 +26,32 @@ from timm.models.swin_transformer import SwinTransformerBlock
 class MaskedAutoencoderViT(nn.Module):
     """ Masked Autoencoder with VisionTransformer backbone
     """
-    def __init__(self, img_size=(1024, 128), patch_size=16, stride=10, in_chans=3,
+    def __init__(self, img_size=(128, 1024), patch_size=16, stride=10, in_chans=3,
                  embed_dim=1024, depth=24, num_heads=16,
                  decoder_embed_dim=512, decoder_depth=8, decoder_num_heads=16,
                  mlp_ratio=4., norm_layer=nn.LayerNorm, norm_pix_loss=False, 
                  audio_exp=True, alpha=0.0, temperature=.2, mode=0, contextual_depth=8,
                  use_custom_patch=False, split_pos=False, pos_trainable=False, use_nce=False, beta=4.0, decoder_mode=0,
                  mask_t_prob=0.6, mask_f_prob=0.5, mask_2d=False,
-                 epoch=0, no_shift=False,
+                 epoch=0, no_shift=False, use_channel_emb=True
+
+                 
                  ):
         super().__init__()
 
         self.audio_exp=audio_exp
         self.embed_dim = embed_dim
         self.decoder_embed_dim = decoder_embed_dim
+        # --------------------------------------------------------------------------
+        # EEG specifics
+        # generate an embedding for each channel name.
+        with open("/home/schepasc/eeg-foundation/src/data/channel_json", 'r') as channel_file:
+            self.all_channels = json.load(channel_file)
+        self.channel_embed = {}
+        
+        for channel in self.all_channels: 
+            self.channel_embed[channel] = nn.Parameter(torch.zeros(1, 1, embed_dim))
+
         # --------------------------------------------------------------------------
         # MAE encoder specifics
         if use_custom_patch:
@@ -50,7 +63,7 @@ class MaskedAutoencoderViT(nn.Module):
         num_patches = self.patch_embed.num_patches
 
         self.cls_token = nn.Parameter(torch.zeros(1, 1, embed_dim))
-
+        
         #self.split_pos = split_pos # not useful
         self.pos_embed = nn.Parameter(torch.zeros(1, num_patches + 1, embed_dim), requires_grad=pos_trainable)  # fixed sin-cos embedding
 
@@ -78,7 +91,7 @@ class MaskedAutoencoderViT(nn.Module):
             feat_size = (102,12)
         else:
             window_size= (4,4)
-            feat_size = (64,8)                
+            feat_size = (8,64)                
         if self.decoder_mode == 1:
             decoder_modules = []
             for index in range(16):
@@ -103,7 +116,7 @@ class MaskedAutoencoderViT(nn.Module):
                         drop_path=0.0,
                         extra_norm=False,
                         sequential_attn=False,
-                        norm_layer=norm_layer, #nn.LayerNorm,
+                        norm_layer=norm_layer, #nn.LayerNorm,y
                     )
                 )
             self.decoder_blocks = nn.ModuleList(decoder_modules)        
@@ -190,7 +203,6 @@ class MaskedAutoencoderViT(nn.Module):
         if self.audio_exp:
             if self.use_custom_patch: # overlapped patch
                 h,w = self.patch_embed.patch_hw
-                # todo: fixed h/w patch size and stride size. Make hw custom in the future
                 x = imgs.unfold(2, self.patch_size, self.stride).unfold(3, self.patch_size, self.stride) # n,1,H,W -> n,1,h,w,p,p
                 x = x.reshape(shape=(imgs.shape[0], h*w, p**2 * 1))
                 #x = imgs.reshape(shape=(imgs.shape[0], 1, h, p, w, p))
@@ -217,8 +229,9 @@ class MaskedAutoencoderViT(nn.Module):
         specs: (N, 1, H, W)
         """
         p = self.patch_embed.patch_size[0]    
-        h = 1024//p
-        w = 128//p
+        #Pascal: adjusted for our spectrogram size
+        h = 128//p
+        w = 1024//p
         x = x.reshape(shape=(x.shape[0], h, w, p, p, 1))
         x = torch.einsum('nhwpqc->nchpwq', x)
         specs = x.reshape(shape=(x.shape[0], 1, h * p, w * p))
@@ -308,9 +321,14 @@ class MaskedAutoencoderViT(nn.Module):
     def forward_encoder(self, x, mask_ratio, mask_2d=False):
         # embed patches
         x = self.patch_embed(x)
+        
+        channels = []
+        
 
         # add pos embed w/o cls token
         x = x + self.pos_embed[:, 1:, :]
+
+        
 
         # masking: length -> length * mask_ratio
         if mask_2d:
@@ -323,12 +341,22 @@ class MaskedAutoencoderViT(nn.Module):
         cls_tokens = cls_token.expand(x.shape[0], -1, -1)
         x = torch.cat((cls_tokens, x), dim=1)
 
+        # append channel token
+        """
+        channel_tokens = []
+        for ch in channels:
+            channel_tokens.append(self.channel_embed[ch] + self.pos_embed[:, :1, :])
+        x = torch.cat(channel_tokens, x)
+        """
+
+
         # apply Transformer blocks
         for blk in self.blocks:
             x = blk(x)
         x = self.norm(x)
         #emb = self.encoder_emb(x)
-
+        
+        
         return x, mask, ids_restore, None
 
     def forward_encoder_no_mask(self, x):
@@ -345,6 +373,8 @@ class MaskedAutoencoderViT(nn.Module):
         cls_token = self.cls_token + self.pos_embed[:, :1, :]
         cls_tokens = cls_token.expand(x.shape[0], -1, -1)
         x = torch.cat((cls_tokens, x), dim=1)
+
+        
 
         # apply Transformer blocks
         contextual_embs=[]
@@ -366,10 +396,11 @@ class MaskedAutoencoderViT(nn.Module):
         x_ = torch.cat([x[:, 1:, :], mask_tokens], dim=1)  # no cls token
         x_ = torch.gather(x_, dim=1, index=ids_restore.unsqueeze(-1).repeat(1, 1, x.shape[2]))  # unshuffle
         x = torch.cat([x[:, :1, :], x_], dim=1)  # append cls token
-
+        
         # add pos embed
         x = x + self.decoder_pos_embed
-        
+
+       
         if self.decoder_mode != 0:
             B,L,D=x.shape
             x = x[:,1:,:]
@@ -383,11 +414,13 @@ class MaskedAutoencoderViT(nn.Module):
             # apply Transformer blocks
             for blk in self.decoder_blocks:
                 x = blk(x)
+                
+        
         x = self.decoder_norm(x)
 
         # predictor projection
         pred = self.decoder_pred(x)
-
+        
         # remove cls token
         if self.decoder_mode != 0:
             if self.use_custom_patch:
@@ -416,14 +449,61 @@ class MaskedAutoencoderViT(nn.Module):
         loss = loss.mean(dim=-1)  # [N, L], mean loss per patch
 
         loss = (loss * mask).sum() / mask.sum()  # mean loss on removed patches
+        loss = loss.sum()
         return loss      
 
     def forward(self, imgs, mask_ratio=0.8):
+
         emb_enc, mask, ids_restore, _ = self.forward_encoder(imgs, mask_ratio, mask_2d=self.mask_2d)
         pred, _, _ = self.forward_decoder(emb_enc, ids_restore)  # [N, L, p*p*3]
         loss_recon = self.forward_loss(imgs, pred, mask, norm_pix_loss=self.norm_pix_loss)
         loss_contrastive = torch.FloatTensor([0.0]).cuda()
+        
+
+        
+        
+
         return loss_recon, pred, mask, loss_contrastive
+    
+
+    def forward_entire_edf(self, edf_data, mask_ratio =0.8):
+
+        #takes as input an entire edf file, separated into channels. each channel is separated into 1024,128 spectrograms.
+        #input is [channels, spectrograms (a mapping from channel name to a list of spectrograms)]
+
+        channels, spectrograms = edf_data
+
+        # a mappping from channel name to the embeddings produced by the encoder
+        embed_per_channel = {}
+
+        #feed the spectrograms from each channel as a batch to the encoder.
+        for channel in channels:
+
+            spgs = spectrograms[channel]
+
+            #pass spectrograms through forward_encoder, treated like a batch
+
+            
+            emb_enc, mask, ids_restore, _ = self.forward_encoder(spgs, mask_ratio, mask_2d=self.mask_2d)
+            embed_per_channel[channel] = emb_enc, mask, ids_restore
+
+        #for each channel, compute the reconstruction loss
+        total_loss = torch.tensor(0.0)
+
+        for channel in channels: 
+
+            #run the generated embeddings through the decoder
+            spgs = spectrograms[channel]
+            emb_enc, mask, ids_restore = embed_per_channel[channel]
+            pred, _, _ = self.forward_decoder(emb_enc, ids_restore)
+            #compute the reconstruction loss and add it up
+            loss_recon = self.forward_loss(spgs, pred, mask, norm_pix_loss=self.norm_pix_loss)
+            total_loss = total_loss + loss_recon
+        
+        return total_loss
+
+
+
 
 
 def mae_vit_small_patch16_dec512d8b(**kwargs):
