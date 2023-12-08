@@ -22,7 +22,8 @@ class EDFDataModule(LightningDataModule):
         min_duration = 1000,
         specific_sr = 256,
         random_sample = False,
-        fixed_sample = True
+        fixed_sample = True,
+        train_val_split = [0.9, 0.1]
     ) -> None: 
         
         super().__init__()
@@ -30,7 +31,7 @@ class EDFDataModule(LightningDataModule):
         self.batch_size = batch_size
         self.num_workers = num_workers
         self.save_hyperparameters(logger=False)
-
+        self.train_val_split = train_val_split
         # specifics on how to load the spectrograms
         self.window_size = window_size
         self.overlap = overlap
@@ -56,9 +57,11 @@ class EDFDataModule(LightningDataModule):
             overlap=self.overlap,
             random_sample=self.random_sample,
             fixed_sample=self.fixed_sample,
-            min_duration=self.min_duration)
+            min_duration=self.min_duration,
+            )
+        
         #entire_dataset = custom_data.one_image_dataset()
-        train_size = int(1* len(entire_dataset))
+        train_size = int(self.train_val_split[0] * len(entire_dataset))
         print("TRAINSIZE IS:::::::::::::::::::::", train_size)
         
         val_size = len(entire_dataset) - train_size

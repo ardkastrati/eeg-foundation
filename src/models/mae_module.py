@@ -37,27 +37,26 @@ class MAEModule(LightningModule):
           
           return loss
     
-    def plot_and_save(self,save_dir, image):
+    def plot_and_save(self,save_dir, image, save_local = True, save_log = False, log_tag =""):
 
         plt.pcolormesh(image, shading='auto', cmap='viridis')
         plt.ylabel('Frequency [Hz]')
         plt.xlabel('steps')
         plt.title('Spectrogram in Decibels')
         plt.colorbar(label='Power/Frequency (dB/Hz)')
-        plt.savefig(save_dir)   
-        print("SAVED AS", save_dir)
+        if save_local: 
+            plt.savefig(save_dir)   
+            print("SAVED AS", save_dir)
+        if save_log :
+            self.logger.experiment.log({log_tag: [wandb.Image(plt)]})
         plt.clf()
 
     def training_step(self, batch, batch_idx):
-        #b, h, w = batch.shape
-
         
-          
-       
         batch.to("cuda")
         loss = self.forward(batch)
-        print(loss.item())
-        self.log("train_loss", loss, on_step=True)
+        
+        self.log("train_loss", loss, on_epoch=True)
         
         self.net.eval()
 
@@ -66,16 +65,53 @@ class MAEModule(LightningModule):
 
             #plot the inputs and outputs of the model every xyz epochs/batches
 
-            with torch.no_grad():
-                #get image matrix
+            self.visualize_plots(batch, local_tag=epoch, log_tag="train")
+
+
+        self.net.train()
+
+        return loss
+    def validation_step(self, batch, batch_idx):
+         
+        self.net.eval()
+
+        loss = self.forward(batch)
+        self.log("val_loss", loss, on_epoch=True)
+        epoch = self.current_epoch
+        #plot the inputs and outputs of the model every xyz epochs/batches
+        if (epoch % self.img_log_frq == 0):
+
+            self.visualize_plots(batch, local_tag=epoch, log_tag="val")
+
+        self.net.train()
+        
+       
+        
+
+
+
+    def configure_optimizers(self):
+        #keeping it simple
+        optimizer = torch.optim.Adam(self.net.parameters(), lr=0.0002)
+        return optimizer
+
+    def visualize_plots(self, batch, local_tag, log_tag):
+
+        with torch.no_grad():
+                #get image matrix (in image has format 1, 128, 1024), just first image of the batch
                 val_image2 = batch[0][0]
                 val_image2 = val_image2.cpu()
                 val_image2 = val_image2.numpy()
                 
+                save_log = False
+                if self.logger is not None :
+                     print("using WANDB logger!")
+                     save_log = True
                 
-                self.plot_and_save(f"in_spectrogram{epoch}", val_image2)
-                
-                #returns prediction image in size (1, 1024, 128)
+                self.plot_and_save(f"in_spectrogram{local_tag}", val_image2, 
+                                   save_log = save_log, log_tag= f"{log_tag}_input_plot")
+            
+                #returns prediction image in size (b, 128, 1024)
                 loss_rec, pred, mask, _ = self.net.forward(batch, mask_ratio = 0.5)
                 
                 mask = mask[0,:]
@@ -99,8 +135,10 @@ class MAEModule(LightningModule):
                 in_patch = np.squeeze(in_patch)
                
                 
-                self.plot_and_save(f"masked_spectrogram{epoch}", in_patch)
-
+                self.plot_and_save(f"masked_spectrogram{local_tag}", in_patch, 
+                                   save_log=save_log, log_tag=f"{log_tag}_in_masked")
+                
+                    
                 #save predicted image
                 pred_patches = pred
                 pred = self.net.unpatchify(pred)
@@ -110,9 +148,9 @@ class MAEModule(LightningModule):
                 
                 pred = np.squeeze(pred, axis = 0)
                 
-                self.plot_and_save(f"predicted_image{epoch}", pred)    
+                self.plot_and_save(f"predicted_image{local_tag}", pred, 
+                                   save_log = save_log, log_tag =f"{log_tag}_predicted")    
                 
-                #self.logger.experiment.log({"out": [wandb.Image(plt)]})
                 
 
                 #overlay predicted patches over masked patches in original image
@@ -131,54 +169,5 @@ class MAEModule(LightningModule):
 
                 overlay = pred_patches + in_patch
 
-                self.plot_and_save(f"predicted_image_overlay{epoch}", overlay)
-
-        self.net.train()
-
-        return loss
-    def validation_step(self, batch, batch_idx):
-         
-        
-        pass
-       
-        """
-        val_image2 = batch[0][0]
-        val_image2 = val_image2.cpu()
-        val_image2 = val_image2.numpy()
-        
-        
-        plt.pcolormesh(val_image2, shading='auto', cmap='viridis')
-        plt.ylabel('Frequency [Hz]')
-        plt.xlabel('steps')
-        plt.title('Spectrogram in Decibels')
-        plt.colorbar(label='Power/Frequency (dB/Hz)')
-        plt.savefig("spectrogram.png")      
-        self.logger.experiment.log({"in": [wandb.Image(plt)]})
-        plt.clf()
-        
-        #returns prediction image in size (b, 1024, 128)
-        _, pred, _, _ = self.net(batch)
-        
-        pred = pred[0, :, :]
-        pred = pred.cpu()
-        pred = pred.numpy()
-        print(pred.shape)
-        pred = np.squeeze(pred, axis = 0)
-        
-        plt.pcolormesh(pred, shading='auto', cmap='viridis')
-        plt.ylabel('Frequency [Hz]')
-        plt.xlabel('steps')
-        plt.title('Spectrogram in Decibels')
-        plt.colorbar(label='Power/Frequency (dB/Hz)')
-        plt.savefig("spectrogram.png")     
-        plt.clf()
-        self.logger.experiment.log({"out": [wandb.Image(plt)]})
-        """
-
-
-
-    def configure_optimizers(self):
-        
-        optimizer = torch.optim.Adam(self.net.parameters(), lr=0.0002)
-        return optimizer
-
+                self.plot_and_save(f"predicted_image_overlay{local_tag}", overlay, 
+                                   save_log=save_log, log_tag =f"{log_tag}_overlay_pred")
