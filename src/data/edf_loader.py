@@ -5,20 +5,20 @@ import scipy
 import scipy.signal
 import random
 import numpy as np
-
+import time
 import os
 import csv
 import torch
 from torch.utils.data import Dataset
 import matplotlib.pyplot as plt
 import torchaudio
+from torch.nn.functional import interpolate
 
-
-def edf2spectrogram(filename, channel_name, window_size = 4.0, overlap = 0.25, debug = True):
+def edf2spectrogram(filename, channel_name, window_size = 4.0, overlap = 0.25, debug = True, interpolate250to256 = True):
 
    
 
-    data = mne.io.read_raw_edf(filename, preload = False)
+    data = mne.io.read_raw_edf(filename)
     
     #channel_names = data.ch_names
     
@@ -26,39 +26,53 @@ def edf2spectrogram(filename, channel_name, window_size = 4.0, overlap = 0.25, d
 
     sr = data.info['sfreq']
     n_per_window = int(sr * window_size)
-    window = scipy.signal.windows.hamming(n_per_window)
+    
     noverlap = int(sr * overlap)
 
     spectrograms = []
     
-   
+    for channel_name in data.ch_names:
+
+        channel_index = data.ch_names.index(channel_name)
+        channel_data =  data.get_data()[channel_index]
+        #convert to volt
+        channel_data = channel_data * 1000000
+        spg = compute_spectrogram(channel_data, sr, n_per_window, noverlap, interpolate250to256)
+        spectrograms.append(spg)
     
-    channel_index = data.ch_names.index(channel_name)
-    channel_data =  data.get_data()[channel_index]
-    #convert to volt
-    channel_data = channel_data * 1000000
+    return spectrograms
+
+def compute_spectrogram(channel_data, sr, n_per_window, noverlap, interpolate250to256):
 
     if len(channel_data) < n_per_window:
         channel_data = np.pad(channel_data, (1, n_per_window - len(channel_data)), mode = 'constant')
         
-                              
+    #cut off first minute since corrupted
+        
+    channel_data = channel_data[int(sr*60):]         
+
     #compute spectrogram and add to list
-    
-    frequencies, times, spg = scipy.signal.spectrogram(x=channel_data, fs=sr, window=window, nperseg = n_per_window, noverlap=n_per_window - noverlap)
+
+    if interpolate250to256 and sr == 250: 
+
+        new_length = (len(channel_data) // 250) * 256
+        channel_tensor = torch.from_numpy(channel_data).unsqueeze(0)
+        channel_tensor = channel_tensor.cuda()
+        
+        interpolated_data = interpolate(channel_tensor.unsqueeze(0),
+                                      new_length, mode='nearest').squeeze(0)
+        interpolated_data = interpolated_data.cpu()
+        channel_data = interpolated_data.numpy().squeeze(0)
+    else: 
+        
+           
+    window = scipy.signal.windows.hamming(n_per_window)
+    _, _, spg = scipy.signal.spectrogram(x=channel_data, fs=sr, window=window, nperseg = n_per_window, noverlap=n_per_window - noverlap)
 
     #convert to decibel, add small value to avoid divide by 0 exception 
     spg += 1e-5
     spg = 20 * np.log10(spg)
-    """
-    spectransform = torchaudio.transforms.Spectrogram(n_fft=256, win_length=n_per_window, hop_length=noverlap)
-    spg = spectransform(channel_data)
-    """
-    
     return spg
-
-
-    
-    
 
 class EDFDataset(Dataset):
 
@@ -71,7 +85,8 @@ class EDFDataset(Dataset):
          min_duration = 200.0, 
          specific_sr = 256.0,  
          random_sample = False, 
-         fixed_sample = True):
+         fixed_sample = True,
+         use_cache = True):
 
         
         print("=====================")
@@ -79,6 +94,8 @@ class EDFDataset(Dataset):
         #load dataset
         with open(data_dir, 'r') as file:
             data =  json.load(file)
+
+        #parameters of the dataset
         self.random_sample = random_sample
         self.data = data
         self.index = []
@@ -92,9 +109,31 @@ class EDFDataset(Dataset):
         self.path_prefix = "/itet-stor/schepasc/deepeye_storage/foundation/tueg/edf"  
         self.fixed_sample = fixed_sample
         
+
+        #filtering options
         self.min_duration = min_duration
         self.specific_sr = specific_sr
+
+        #create an index mapping into each channel
         self.build_channel_index(min_duration= self.min_duration, specific_sr=self.specific_sr)
+
+        self.cache = []
+        self.use_cache = use_cache
+
+        index_length = len(self.index)
+        print("Timing the spectrogram Generation")
+        print(f"for {300} spectrograms, it takes")
+        start_time = time.time()
+        i = 0
+        if self.use_cache: 
+            for j in range(300):
+                for ch in self.getspectro(j):
+                    self.cache.append(ch)
+                    print("computed", i)
+                    i = i + 1
+        end_time = time.time()
+        print(str(end_time - start_time) + " seconds")
+        self.single_image = None
     def __len__(self):
         
         return len(self.index)
@@ -116,76 +155,86 @@ class EDFDataset(Dataset):
                     self.index.append((path, chn, ref))
 
         print(len(self.index))
-
     def __getitem__(self, idx):
+        """
+        if self.use_cache:
+            return self.cache[idx]
+        else:
+            return self.getspectro(idx)
+        """
+        return self.cache[idx]
+    def getspectro(self, idx):
         
+        ret_list = []
 
         path, channel, ref = self.index[idx]
 
+
         actual_path = self.path_prefix + path
-        spectrogram = edf2spectrogram(actual_path,channel_name=channel, window_size=self.window_size, overlap=self.overlap, debug=self.debug)
+        spectrograms = edf2spectrogram(actual_path,channel_name=channel, window_size=self.window_size, overlap=self.overlap, debug=self.debug)
             
-        data_sample = []
-
-        
-        h, w = spectrogram.shape
-        
-        spectrogram = spectrogram[0:self.img_height, :]
-
-        
-        if h < self.img_height: 
-
-            padding_size = self.img_height - h
-            spectrogram = np.pad(spectrogram, ((0, padding_size), (0, 0)), mode='constant')
-
-        if w < self.img_width:
-
-            padding_size = self.img_width - w
-            spectrogram = np.pad(spectrogram, ( (0, 0), (0,padding_size)), mode='constant')
+        for spectrogram in spectrograms:
+            h, w = spectrogram.shape
             
-        
-        
-        
-        samples = []
-        
-        #if random sample, select a slice starting anywhere that fits
-        if self.random_sample: 
+            spectrogram = spectrogram[0:self.img_height, :]
+
             
-            max_startpoint = spectrogram.shape[1] - self.img_width
+            if h < self.img_height: 
 
-            if max_startpoint == 0:
-                ret = spectrogram
-            else:
-                startpoint = random.randint(0, max_startpoint)
-                ret = spectrogram[:, startpoint:startpoint+self.img_width]
+                padding_size = self.img_height - h
+                spectrogram = np.pad(spectrogram, ((0, padding_size), (0, 0)), mode='constant')
 
-                #norm the spg on per sample basis.
-                ret = (ret - np.mean(ret)) / (2 * np.std(ret))
+            if w < self.img_width:
 
-        
-        else:
-            start_ind = 0
-            num_samples =spectrogram.shape[1] // self.img_width
-            
-            for i in range(num_samples):
-                    
-                slice = spectrogram[:, i * start_ind:start_ind+self.img_width]
-                samples.append(slice)
-                ret = samples
-            #this is for overfitting testing
-            if self.fixed_sample:
-
-                ret = samples[1]
-                #norm the spg on per sample basis.
-                ret = (ret - np.mean(ret)) / (2 * np.std(ret))
+                padding_size = self.img_width - w
+                spectrogram = np.pad(spectrogram, ( (0, 0), (0,padding_size)), mode='constant')
                 
-        #for now just trim it to single sample size. 
+            
+            
+            
+            samples = []
+            
+            #if random sample, select a slice starting anywhere that fits
+            if self.random_sample: 
+                
+                max_startpoint = spectrogram.shape[1] - self.img_width
+
+                if max_startpoint == 0:
+                    ret = spectrogram
+                else:
+                    startpoint = random.randint(0, max_startpoint)
+                    ret = spectrogram[:, startpoint:startpoint+self.img_width]
+
+                    #norm the spg on per sample basis.
+                    ret = (ret - np.mean(ret)) / (2 * np.std(ret))
+
+            
+            else:
+                start_ind = 0
+                num_samples =spectrogram.shape[1] // self.img_width
+                
+                for i in range(num_samples):
+                        
+                    slice = spectrogram[:, i * start_ind:start_ind+self.img_width]
+                    samples.append(slice)
+                    ret = samples
+                #this is for overfitting testing
+                if self.fixed_sample:
+
+                    ret = samples[0]
+                    #norm the spg on per sample basis.
+                    ret = (ret - np.mean(ret)) / (2 * np.std(ret))
+                    
+            #for now just trim it to single sample size. 
+            
+            #return spectrogram
+            
+            #add img_channels, in our case only one
+            ret = np.expand_dims(ret, axis=0)
+            ret_list.append(ret)
         
-        #return spectrogram
-        
-        #add img_channels, in our case only one
-        ret = np.expand_dims(ret, axis=0)
-        return ret
+
+        return ret_list
 
 
 
@@ -226,9 +275,9 @@ class one_image_dataset(Dataset):
 
 if __name__ == "__main__":
 
-    dset = EDFDataset("/home/schepasc/eeg-foundation/src/data/000_json")
+    dset = EDFDataset("/home/schepasc/eeg-foundation/src/data/000_json", specific_sr=250, min_duration=1000)
     print("getting first spectrogram")
-    spectro = dset[7]
+    spectro = dset[0]
     mean = np.mean(spectro[0])
     print(spectro.shape)
     print(spectro)

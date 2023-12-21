@@ -2,7 +2,7 @@ import csv, os
 import mne 
 import json
 
-def generate_lookup_file(data_dir, lookup_name):
+def generate_lookup_file(data_dir, lookup_name, exclude = []):
 
     prefix = "/itet-stor/schepasc/deepeye_storage/foundation/tueg/edf"
     mne.set_log_level("WARNING")
@@ -10,6 +10,8 @@ def generate_lookup_file(data_dir, lookup_name):
     edf_paths = []
     lookup = []
     
+         
+
     for root, dirs, files in os.walk(top=data_dir):
             for name in files:
                 
@@ -82,12 +84,50 @@ def generate_channel_index(data_path, stor_path):
      with open(stor_path, 'w') as stor_file:
           json.dump(all_channels, stor_file)
 
+def exclude(data_path, to_exclude_path, new_data_path):
 
+     with open(data_path, 'r') as file:
+            og_data =  json.load(file)
+     
+     with open(to_exclude_path, 'r') as exclude_file:
+            exclude_data =  json.load(exclude_file)
 
+     new_data = []
+     
+     for edf_file in og_data:
 
+          path = edf_file['path']
+          slash_index = path.rfind('/')
+          print(slash_index)
+          path = path[slash_index+1:]
+          print(path)
+          if path not in exclude_data:
+               new_data.append(edf_file)
+     
+     with open(new_data_path, 'w') as file:
+            json.dump(new_data, file)
+
+     print("removed" + str(len(og_data) - len(new_data)))
+
+def gen_first_run_set(data_path, new_data_path):
+
+     with open(data_path, 'r') as file:
+            og_data =  json.load(file)
+     
+     new_data = og_data[:15000]
+     i = 0
+     for d in new_data:
+          chn = len(d['channels'])
+          i = i + chn
+     print(i)
+     
+     with open(new_data_path, 'w') as file:
+            og_data =  json.dump(new_data, file)
 
 if __name__ == "__main__":
     #generate_lookup_file("/itet-stor/schepasc/deepeye_storage/foundation/tueg/edf/000", "debug_json")
     #generate_lookup_file("/itet-stor/schepasc/deepeye_storage/foundation/tueg/edf", "tueg_json")
     #generate_channel_index("/home/schepasc/eeg-foundation/src/data/tueg_json", "channel_json")
-    generate_lookup_file("/itet-stor/schepasc/deepeye_storage/foundation/tueg/edf/000", "000_json")
+    #generate_lookup_file("/itet-stor/schepasc/deepeye_storage/foundation/tueg/edf", "tueg_json")
+     #exclude("tueg_json", "tuab_paths", )
+     gen_first_run_set("train_without_tuab_json", "scond_run_json")

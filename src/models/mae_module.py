@@ -6,6 +6,7 @@ from torchmetrics import MaxMetric, MeanMetric
 from torchmetrics.classification.accuracy import Accuracy
 import matplotlib.pyplot as plt
 import numpy as np
+import sys
 class MAEModule(LightningModule):
 
     def __init__(
@@ -14,14 +15,11 @@ class MAEModule(LightningModule):
             optimizer: torch.optim.Optimizer,
             scheduler: torch.optim.lr_scheduler,
             compile: bool,
-            img_log_frq : 100
+            img_log_frq : 1000
         ) -> None:
-            """Initialize a `MNISTLitModule`.
+            
 
-            :param net: The model to train.
-            :param optimizer: The optimizer to use for training.
-            :param scheduler: The learning rate scheduler to use for training.
-            """
+            
             super().__init__()
             
             # this line allows to access init params with 'self.hparams' attribute
@@ -40,13 +38,13 @@ class MAEModule(LightningModule):
     def plot_and_save(self,save_dir, image, save_local = True, save_log = False, log_tag =""):
 
         plt.pcolormesh(image, shading='auto', cmap='viridis')
-        plt.ylabel('Frequency [Hz]')
+        plt.ylabel('Frequency Bins')
         plt.xlabel('steps')
-        plt.title('Spectrogram in Decibels')
-        plt.colorbar(label='Power/Frequency (dB/Hz)')
+        plt.title('Spectrogram')
+        plt.colorbar(label='')
         if save_local: 
-            plt.savefig(save_dir)   
-            print("SAVED AS", save_dir)
+                plt.savefig(save_dir)   
+            
         if save_log :
             self.logger.experiment.log({log_tag: [wandb.Image(plt)]})
         plt.clf()
@@ -56,35 +54,46 @@ class MAEModule(LightningModule):
         batch.to("cuda")
         loss = self.forward(batch)
         
-        self.log("train_loss", loss, on_epoch=True)
+        self.log("train_loss", loss.item(), on_epoch=True)
         
-        self.net.eval()
+        #self.net.eval()
 
         epoch = self.current_epoch
-        if (epoch % self.img_log_frq == 0):
+        step = self.trainer.global_step
+        #I removed the logging for now - think might be culprit of memory issues.
+        #Logic is in self.visualize_plots
+        #Once I improve the logging will move it to on_epoch_end step
+        #if ( step % self.img_log_frq == 0):
 
             #plot the inputs and outputs of the model every xyz epochs/batches
 
-            self.visualize_plots(batch, local_tag=epoch, log_tag="train")
+            #self.visualize_plots(batch, local_tag=epoch, log_tag="train")
 
 
-        self.net.train()
+        #self.net.train()
 
         return loss
+    def on_train_epoch_end(self): 
+         
+       pass
+
     def validation_step(self, batch, batch_idx):
          
-        self.net.eval()
-
-        loss = self.forward(batch)
-        self.log("val_loss", loss, on_epoch=True)
-        epoch = self.current_epoch
-        #plot the inputs and outputs of the model every xyz epochs/batches
-        if (epoch % self.img_log_frq == 0):
-
-            self.visualize_plots(batch, local_tag=epoch, log_tag="val")
-
-        self.net.train()
         
+        with torch.no_grad():
+
+            loss = self.forward(batch)
+            self.log("val_loss", loss.item(), on_epoch=True)
+            epoch = self.current_epoch
+            step = self.trainer.global_step
+            #plot the inputs and outputs of the model every xyz epochs/batches
+            scaled_frq  = self.img_log_frq * 0.05
+            #if (step % scaled_frq == 0):
+
+                #self.visualize_plots(batch, local_tag=epoch, log_tag="val")
+
+        
+   
        
         
 
@@ -96,7 +105,9 @@ class MAEModule(LightningModule):
         return optimizer
 
     def visualize_plots(self, batch, local_tag, log_tag):
+        
 
+        print("Visualizing the Validation Plots!")
         with torch.no_grad():
                 #get image matrix (in image has format 1, 128, 1024), just first image of the batch
                 val_image2 = batch[0][0]
@@ -144,7 +155,7 @@ class MAEModule(LightningModule):
                 pred = self.net.unpatchify(pred)
                 pred = pred[0, :, :]
                 pred = pred.cpu()
-                pred = pred.detach().numpy()
+                
                 
                 pred = np.squeeze(pred, axis = 0)
                 

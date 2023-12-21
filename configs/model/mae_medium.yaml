@@ -14,7 +14,7 @@ scheduler:
   mode: min
   factor: 0.1
   patience: 10
-
+img_log_frq : 300
 net:
   _target_: src.models.mae_original.MaskedAutoencoderViT
   in_chans: 1

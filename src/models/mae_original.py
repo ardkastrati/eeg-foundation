@@ -38,7 +38,7 @@ class MaskedAutoencoderViT(nn.Module):
                  
                  ):
         super().__init__()
-
+        self.img_size = img_size
         self.audio_exp=audio_exp
         self.embed_dim = embed_dim
         self.decoder_embed_dim = decoder_embed_dim
@@ -91,7 +91,7 @@ class MaskedAutoencoderViT(nn.Module):
             feat_size = (102,12)
         else:
             window_size= (4,4)
-            feat_size = (8,64)                
+            feat_size = (self.img_size[0]//patch_size, self.img_size[1]//patch_size)                
         if self.decoder_mode == 1:
             decoder_modules = []
             for index in range(16):
@@ -230,8 +230,8 @@ class MaskedAutoencoderViT(nn.Module):
         """
         p = self.patch_embed.patch_size[0]    
         #Pascal: adjusted for our spectrogram size
-        h = 128//p
-        w = 1024//p
+        h = self.img_size[0]//p
+        w = self.img_size[1]//p
         x = x.reshape(shape=(x.shape[0], h, w, p, p, 1))
         x = torch.einsum('nhwpqc->nchpwq', x)
         specs = x.reshape(shape=(x.shape[0], 1, h * p, w * p))
@@ -447,7 +447,7 @@ class MaskedAutoencoderViT(nn.Module):
 
         loss = (pred - target) ** 2
         loss = loss.mean(dim=-1)  # [N, L], mean loss per patch
-
+        
         loss = (loss * mask).sum() / mask.sum()  # mean loss on removed patches
         loss = loss.sum()
         return loss      

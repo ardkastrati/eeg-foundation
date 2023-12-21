@@ -10,9 +10,9 @@ defaults:
 
 trainer:
 
-  min_epochs: 50
-  max_epochs: 200
-  overfit_batches: 1
+  min_epochs: 80
+  max_epochs: 100
+  
 
 data:
   data_dir: "/home/schepasc/eeg-foundation/src/data/000_json"
@@ -26,7 +26,7 @@ data:
 
 model: 
  
-  img_log_frq : 20
+  img_log_frq : 300
 
   optimizer:
     lr: 0.0002
