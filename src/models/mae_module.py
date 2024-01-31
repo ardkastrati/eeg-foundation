@@ -6,6 +6,7 @@ from torchmetrics import MaxMetric, MeanMetric
 from torchmetrics.classification.accuracy import Accuracy
 import matplotlib.pyplot as plt
 import numpy as np
+import time
 import sys
 class MAEModule(LightningModule):
 
@@ -15,7 +16,9 @@ class MAEModule(LightningModule):
             optimizer: torch.optim.Optimizer,
             scheduler: torch.optim.lr_scheduler,
             compile: bool,
-            img_log_frq : 1000
+            img_log_frq : 1000,
+            learning_rate = 0.0002,
+            mask_ratio = 0.5
         ) -> None:
             
 
@@ -27,23 +30,24 @@ class MAEModule(LightningModule):
             self.save_hyperparameters(logger=False)
             self.img_log_frq = img_log_frq
             self.net = net
-            
+            self.epoch_start_time = 0
+            self.learning_rate = learning_rate
+            self.mask_ratio = mask_ratio
 
     def forward(self, x):
           
-          loss, _, mask,_ = self.net(x, mask_ratio = 0.5)
+          loss, _, mask,_ = self.net(x, mask_ratio = self.mask_ratio)
           
           return loss
     
-    def plot_and_save(self,save_dir, image, save_local = True, save_log = False, log_tag =""):
+    def plot_and_save(self,save_dir, image, save_local = False, save_log = False, log_tag =""):
 
         plt.pcolormesh(image, shading='auto', cmap='viridis')
         plt.ylabel('Frequency Bins')
         plt.xlabel('steps')
         plt.title('Spectrogram')
         plt.colorbar(label='')
-        if save_local: 
-                plt.savefig(save_dir)   
+        
             
         if save_log :
             self.logger.experiment.log({log_tag: [wandb.Image(plt)]})
@@ -51,47 +55,49 @@ class MAEModule(LightningModule):
 
     def training_step(self, batch, batch_idx):
         
-        batch.to("cuda")
+        
         loss = self.forward(batch)
         
         self.log("train_loss", loss.item(), on_epoch=True)
         
-        #self.net.eval()
+        
 
         epoch = self.current_epoch
         step = self.trainer.global_step
-        #I removed the logging for now - think might be culprit of memory issues.
-        #Logic is in self.visualize_plots
-        #Once I improve the logging will move it to on_epoch_end step
-        #if ( step % self.img_log_frq == 0):
+        
+        if ( step % self.img_log_frq == 0):
 
             #plot the inputs and outputs of the model every xyz epochs/batches
 
-            #self.visualize_plots(batch, local_tag=epoch, log_tag="train")
+            self.visualize_plots(batch, local_tag=epoch, log_tag="train")
 
 
-        #self.net.train()
+        
 
         return loss
     def on_train_epoch_end(self): 
-         
-       pass
+        
+        end_time = time.time()
+        self.log("Time per Epoch", end_time - self.epoch_start_time)
+        self.epoch_start_time = time.time()
+        
+        
 
     def validation_step(self, batch, batch_idx):
          
+       
         
-        with torch.no_grad():
-
-            loss = self.forward(batch)
-            self.log("val_loss", loss.item(), on_epoch=True)
-            epoch = self.current_epoch
-            step = self.trainer.global_step
-            #plot the inputs and outputs of the model every xyz epochs/batches
-            scaled_frq  = self.img_log_frq * 0.05
-            #if (step % scaled_frq == 0):
-
-                #self.visualize_plots(batch, local_tag=epoch, log_tag="val")
-
+        
+        loss = self.forward(batch)
+        self.log("val_loss", loss.item(), on_epoch=True)
+        epoch = self.current_epoch
+        step = self.trainer.global_step
+        #plot the inputs and outputs of the model every xyz epochs/batches
+        scaled_frq  = self.img_log_frq * 0.5
+        if (step % scaled_frq == 0):
+            
+            self.visualize_plots(batch, local_tag=epoch, log_tag="val")
+        
         
    
        
@@ -101,13 +107,13 @@ class MAEModule(LightningModule):
 
     def configure_optimizers(self):
         #keeping it simple
-        optimizer = torch.optim.Adam(self.net.parameters(), lr=0.0002)
+        optimizer = torch.optim.Adam(self.net.parameters(), lr=self.learning_rate)
         return optimizer
 
     def visualize_plots(self, batch, local_tag, log_tag):
         
 
-        print("Visualizing the Validation Plots!")
+        
         with torch.no_grad():
                 #get image matrix (in image has format 1, 128, 1024), just first image of the batch
                 val_image2 = batch[0][0]
@@ -123,7 +129,7 @@ class MAEModule(LightningModule):
                                    save_log = save_log, log_tag= f"{log_tag}_input_plot")
             
                 #returns prediction image in size (b, 128, 1024)
-                loss_rec, pred, mask, _ = self.net.forward(batch, mask_ratio = 0.5)
+                loss_rec, pred, mask, _ = self.net.forward(batch, mask_ratio = self.mask_ratio)
                 
                 mask = mask[0,:]
                 

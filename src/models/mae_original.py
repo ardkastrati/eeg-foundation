@@ -45,7 +45,7 @@ class MaskedAutoencoderViT(nn.Module):
         # --------------------------------------------------------------------------
         # EEG specifics
         # generate an embedding for each channel name.
-        with open("/home/schepasc/eeg-foundation/src/data/channel_json", 'r') as channel_file:
+        with open("/home/schepasc/eeg-foundation/src/data/edf_index/channel_json", 'r') as channel_file:
             self.all_channels = json.load(channel_file)
         self.channel_embed = {}
         
@@ -432,6 +432,9 @@ class MaskedAutoencoderViT(nn.Module):
         else:
             pred = pred[:, 1:, :]
         return pred, None, None #emb, emb_pixel
+    
+
+    
 
     def forward_loss(self, imgs, pred, mask, norm_pix_loss=False):
         """
@@ -452,7 +455,7 @@ class MaskedAutoencoderViT(nn.Module):
         loss = loss.sum()
         return loss      
 
-    def forward(self, imgs, mask_ratio=0.8):
+    def forward(self, imgs, mask_ratio=0.5):
 
         emb_enc, mask, ids_restore, _ = self.forward_encoder(imgs, mask_ratio, mask_2d=self.mask_2d)
         pred, _, _ = self.forward_decoder(emb_enc, ids_restore)  # [N, L, p*p*3]

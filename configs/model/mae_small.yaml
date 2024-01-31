@@ -25,7 +25,7 @@ net:
   decoder_num_heads : 16
   mlp_ratio : 4
   decoder_mode : 1
-
+  
 
 # compile model for faster training with pytorch 2.0
 compile: false

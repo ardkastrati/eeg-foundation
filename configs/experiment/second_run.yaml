@@ -23,7 +23,7 @@ data:
   min_duration : 326
   select_sr : [256]
   select_ref : ['AR']
-  num_workers : 8
+  num_workers : 0
 model: 
  
   img_log_frq : 5000

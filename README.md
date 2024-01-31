@@ -1,5 +1,18 @@
 <div align="center">
 
+EEG-Spectrogram notes:
+
+To install, follow the installation of the hydra/lightning readme. The requirements.txt has been adjusted accordingly.
+To use the SWIN-Transformer from timm 0.3.2, please  execute the timm_patch.sh script after editing it with the path to your timm installation.
+
+
+</div>
+
+
+
+
+<div align="center">
+
 # Lightning-Hydra-Template
 
 [![python](https://img.shields.io/badge/-Python_3.8_%7C_3.9_%7C_3.10-blue?logo=python&logoColor=white)](https://github.com/pre-commit/pre-commit)

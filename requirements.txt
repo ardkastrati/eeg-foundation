@@ -22,5 +22,5 @@ pre-commit      # hooks for applying linters on commit
 rich            # beautiful text formatting in terminal
 pytest          # tests
 mne             # reading edf files
-timm            # vision models
+timm==0.3.2     # vision models, SWINTransformer (requires patching via .sh file)
 # sh            # for running bash commands in some tests (linux/macos only)

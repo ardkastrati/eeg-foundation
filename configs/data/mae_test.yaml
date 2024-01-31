@@ -1,5 +1,5 @@
 _target_: src.data.edf_datamodule.EDFDataModule
 data_dir: "/home/schepasc/eeg-foundation/src/data/000_json"
 batch_size: 8
-num_workers: 8
+num_workers: 0
 pin_memory: False

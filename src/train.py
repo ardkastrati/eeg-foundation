@@ -1,5 +1,5 @@
 from typing import Any, Dict, List, Optional, Tuple
-
+import psutil
 import hydra
 import lightning as L
 import rootutils
@@ -110,10 +110,13 @@ def train(cfg: DictConfig) -> Tuple[Dict[str, Any], Dict[str, Any]]:
 @hydra.main(version_base="1.3", config_path="../configs", config_name="train.yaml")
 def main(cfg: DictConfig) -> Optional[float]:
     """Main entry point for training.
-
+    
     :param cfg: DictConfig configuration composed by Hydra.
     :return: Optional[float] with optimized metric value.
     """
+    print("At train.py entry")
+    print('RAM memory % used:', psutil.virtual_memory()[2])
+    print('RAM Used (GB):', psutil.virtual_memory()[3]/1000000000)
     # apply extra utilities
     # (e.g. ask for tags if none are provided in cfg, print cfg tree, etc.)
     extras(cfg)

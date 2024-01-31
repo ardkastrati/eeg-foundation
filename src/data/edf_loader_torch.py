@@ -67,12 +67,7 @@ class EDFDataset(Dataset):
         self.load_times = []
         self.transform_times = []
 
-        #caching by loading everything before first epoch:
-        self.use_cache = use_cache
-        
-        self.cache = {}
-
-        
+        self.shmpath = "/dev/shm/spec/"
     def get_times(self):
 
         return np.mean(self.load_times), np.mean(self.transform_times)
@@ -90,26 +85,12 @@ class EDFDataset(Dataset):
             ref = edf_file['ref']
             duration = edf_file['duration']
 
-            if sampling_rate in select_sr and ref in select_ref and duration >= min_duration:
+            if sampling_rate in select_sr and ref in select_ref and duration >= min_duration and duration <= 1260:
                 for chn in channel_names:
                     self.index.append((path, chn, ref))
 
         print(len(self.index))
 
-    def build_cache(self):
-
-        print("building the cache")
-        cache_start = time.time()
-        
-        
-        for i in range(self.__len__()):
-            if i % 20 == 0:
-                print(i)
-            self.cache.append(self.__getitem__(i))
-
-        cache_end = time.time()
-        cache_duration = cache_end - cache_start
-        print(f"took {cache_duration} seconds")
 
 
     def load_channel_data(self, path, chn, pre_crop = True):
@@ -163,23 +144,16 @@ class EDFDataset(Dataset):
     def __getitem__(self, idx):
         
        
-
-        print(idx in self.cache)
-        if idx in self.cache:
-            print("loadinc cached file")
-            return self.cache[idx]
         
-        #load_start_time = time.time()
+
+        
+
+
         path, chn, ref = self.index[idx]
         channel_data = self.load_channel_data(path, chn)
-        #load_end_time = time.time()
-        #load_time = load_end_time - load_start_time
-        #print("loading took" + str(load_time))
-        #self.load_times.append(load_time)
+       
 
         #apply transforms
-        
-        #transform_start_time = time.time()
         
         spectrogram = self.transform(channel_data)
 
@@ -191,13 +165,10 @@ class EDFDataset(Dataset):
         #normalize on per sample basis
         spectrogram = (spectrogram - torch.mean(spectrogram)) / (torch.std(spectrogram) * 2)
         
-        #transform_end_time = time.time()
+        
         #transform_time = transform_end_time - transform_start_time
         
-        #self.transform_times.append(transform_time)
-        
-        
-        self.cache[idx] = spectrogram
+
         
 
         return spectrogram    
@@ -212,7 +183,7 @@ class CropSpectrogram(object):
     def __call__(self, spectrogram):
 
         #crop vertically
-        spectrogram = spectrogram[0:128, :]
+        spectrogram = spectrogram[4:68, :]
 
         #crop&pad horizontally (padding shouldn't be necessary because of our sample selection but just in case)
 
@@ -225,6 +196,46 @@ class CropSpectrogram(object):
             spectrogram = spectrogram[:, 0:self.target_width]
         #add 1 'image channel'
         return spectrogram.unsqueeze(0)
+    
+
+class EDFCacheDataset(Dataset):
+
+    def __init__(self, cache):
+        
+        self.cache = cache
+
+    def __len__(self):
+        return len(self.cache)
+    def __getitem__(self, idx): 
+        return self.cache[idx] 
+    
+
+
+
+
+
+
+
+
+
+
+class EDFDiscDataset(Dataset):
+
+    def __init__(self, file_index):
+
+        self.file_index = file_index
+    
+    def __len__(self):
+        return len(self.file_index)
+    
+    def __getitem__(self, idx):
+
+        path = self.file_index[idx]
+
+        spectro = np.load(path)
+        spectro = torch.from_numpy(spectro)
+        
+        return spectro.unsqueeze(0)
 
 if __name__ == "__main__":
     multiprocessing.set_start_method('spawn')
