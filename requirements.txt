@@ -10,7 +10,7 @@ hydra-colorlog==1.2.0
 hydra-optuna-sweeper==1.2.0
 
 # --------- loggers --------- #
-# wandb
+wandb
 # neptune-client
 # mlflow
 # comet-ml
@@ -21,4 +21,6 @@ rootutils       # standardizing the project root setup
 pre-commit      # hooks for applying linters on commit
 rich            # beautiful text formatting in terminal
 pytest          # tests
+mne             # reading edf files
+timm==0.3.2     # vision models, SWINTransformer (requires patching via .sh file)
 # sh            # for running bash commands in some tests (linux/macos only)

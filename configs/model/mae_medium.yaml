@@ -1,0 +1,33 @@
+_target_: src.models.mae_module.MAEModule
+
+optimizer:
+  _target_: torch.optim.AdamW
+  _partial_: true
+  lr: 0.0001
+  betas:
+    - 0.9
+    - 0.95
+
+scheduler:
+  _target_: torch.optim.lr_scheduler.ReduceLROnPlateau
+  _partial_: true
+  mode: min
+  factor: 0.1
+  patience: 10
+img_log_frq : 300
+net:
+  _target_: src.models.mae_original.MaskedAutoencoderViT
+  in_chans: 1
+  patch_size : 16
+  embed_dim: 768
+  depth: 12
+  num_heads : 16
+  decoder_embed_dim : 512
+  decoder_num_heads : 16
+  mlp_ratio : 4
+  decoder_mode : 1
+  
+
+
+# compile model for faster training with pytorch 2.0
+compile: false

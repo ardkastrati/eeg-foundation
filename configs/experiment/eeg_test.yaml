@@ -1,0 +1,32 @@
+# @package _global_
+
+
+defaults:
+  - override /data: mae_test
+  - override /model: mae_small
+  - override /callbacks: null
+  - override /trainer: default
+
+
+trainer:
+
+  min_epochs: 5
+  max_epochs: 10
+
+data:
+  #data_dir: "/home/schepasc/eeg-foundation/src/data/000_json"
+  data_dir: "/home/schepasc/tueg_json"
+  batch_size : 8
+  window_size : 4.0
+  window_shift : 0.25
+  #duration of the EDF recording in seconds
+  min_duration : 326
+  select_sr : [250, 256]
+  select_ref : ['AR']
+
+model: 
+ 
+  img_log_frq : 500
+  
+  optimizer:
+    lr: 0.0001

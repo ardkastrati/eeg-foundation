@@ -1,0 +1,5 @@
+_target_: src.data.edf_datamodule_finetune.EDFDataModule
+data_dir: "/home/schepasc/tuab_label_paths"
+batch_size: 4
+num_workers: 0
+pin_memory: False

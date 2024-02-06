@@ -7,10 +7,10 @@ wandb:
   offline: False
   id: null # pass correct id to resume experiment!
   anonymous: null # enable anonymous logging
-  project: "mae_spectrogram"
+  project: "foundation_mae"
   log_model: False # upload lightning ckpts
   prefix: "" # a string to put at the beginning of metric keys
-  entity: "eeg-foundation" # set to name of your wandb team
+  entity: "schepasc" # set to name of your wandb team
   group: ""
   tags: []
   job_type: ""
