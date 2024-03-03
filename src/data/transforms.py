@@ -37,8 +37,8 @@ class crop_spectrogram():
 
         #crop vertically
         
-        spectrogram = spectrogram[0:self.target_height, :]
-
+        spectrogram = spectrogram[4:4+self.target_height, :]
+        
         #crop&pad horizontally (padding shouldn't be necessary because of our sample selection but just in case)
 
         width_pad = self.target_width - spectrogram.shape[1]
@@ -58,11 +58,12 @@ class crop_spectrogram():
 class fft_256():
     
     #compute spetrogram from channel data
-    def __init__(self, window_size = 4.0, window_shift = 0.25):
+    def __init__(self, window_size = 4.0, window_shift = 0.25, cuda = False):
 
         super().__init__()
         self.fft256 = torchaudio.transforms.Spectrogram(n_fft=int(4.0 * 256), win_length=int(window_size * 256), hop_length= int(window_shift * 256), normalized=True)
-        
+        if (cuda):
+            self.fft256 = self.fft256.to('cuda')
     #perform SFFT on data
     def __call__(self, data):
         
@@ -93,7 +94,7 @@ class load_channel_data():
         chn = data['chn']
         
         #include = chn -> only loads the data for the channel we want the sample from.
-        edf_data = mne.io.read_raw_edf(path, include=chn, preload=False)
+        edf_data = mne.io.read_raw_edf(path, include=chn, preload=True)
 
         data = edf_data.get_data()
         
