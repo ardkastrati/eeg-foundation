@@ -1,5 +1,5 @@
 _target_: src.data.edf_datamodule_finetune.EDFDataModule
-data_dir: "/home/schepasc/tuab_label_paths"
-batch_size: 4
-num_workers: 0
+data_dir: "/home/schepasc/eeg-foundation/indices_and_labels/tuab_train_labeled"
+batch_size: 2
+num_workers: 4
 pin_memory: False

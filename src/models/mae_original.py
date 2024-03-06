@@ -229,7 +229,7 @@ class MaskedAutoencoderViT(nn.Module):
         specs: (N, 1, H, W)
         """
         p = self.patch_embed.patch_size[0]    
-        #Pascal: adjusted for our spectrogram size
+        #adjusted for our spectrogram size
         h = self.img_size[0]//p
         w = self.img_size[1]//p
         x = x.reshape(shape=(x.shape[0], h, w, p, p, 1))
@@ -467,7 +467,46 @@ class MaskedAutoencoderViT(nn.Module):
         
 
         return loss_recon, pred, mask, loss_contrastive
-    
+    def freeze_encoder(self):
+
+        #freeze weights of encoder blocks
+        self.blocks.requires_grad = False
+
+    def unfreeze_encoder(self):
+
+        #unfreeze weights of encoder blocks
+        self.blocks.requires_grad = True
+    def forward_finetune(self, x):
+
+        #input is batchsize * [#channels]
+        predictions = torch.zeros(len(x))
+        
+        for i, sample in enumerate(x):
+            
+            num_channels = len(sample)
+            emb_sum = torch.zeros(self.embed_dim)
+            emb_sum = emb_sum.cuda()
+            
+           
+            for spg in sample:
+                
+                spg = spg.unsqueeze(0)
+                emb = self.forward_encoder_no_mask(spg)
+               
+                emb = emb[0][0]
+                
+                emb_sum = emb_sum + emb
+
+            emb_sum = emb_sum / num_channels
+            
+            pred = self.mlp1(emb_sum)
+            
+            pred = torch.relu(pred)
+            pred = self.mlp2(pred)
+            pred = self.sigmoid(pred)
+            predictions[i] = pred
+        
+        return predictions
 
     def forward_entire_edf(self, edf_data, mask_ratio =0.8):
 

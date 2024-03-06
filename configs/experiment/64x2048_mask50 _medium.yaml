@@ -2,37 +2,38 @@
 
 
 defaults:
-  - override /data: mae_finetune
-  - override /model: mae_small_finetune_pretrain
+  - override /data: mae_test
+  - override /model: mae_medium
   - override /callbacks: null
   - override /trainer: default
 
 
 trainer:
 
-  min_epochs: 20
-  max_epochs: 25
+  min_epochs: 50
+  max_epochs: 55
 
 data:
-  
-  batch_size : 2
+  #data_dir: "/home/schepasc/eeg-foundation/src/data/000_json"
+  data_dir: "/home/schepasc/train_without_tuab_json"
+  batch_size : 32
   window_size : 2.0
   window_shift : 0.125
   #duration of the EDF recording in seconds
   min_duration : 326
   select_sr : [250, 256]
   select_ref : ['AR']
-  num_workers : 8
+  num_workers : 4
   target_size : [64, 2048]
   stor_mode: "LOAD"
 model: 
  
   img_log_frq : 5000
-  mask_ratio : 0.15
+  mask_ratio : 0.5
   
   net: 
     img_size  : [64, 2048]
     norm_pix_loss : False
   optimizer:
     lr: 0.0002
-tags: ["finetune", "pretrained", 64x2048"]
+tags: ["full_run", "tuab", "mask 0.5", "64x2048"]
