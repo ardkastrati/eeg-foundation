@@ -11,9 +11,7 @@ import numpy as np
 import torch
 
 
-
-
-class NumpySerializedList():
+class NumpySerializedList:
     def __init__(self, lst: list):
         def _serialize(data):
             buffer = pickle.dumps(data, protocol=-1)
@@ -51,6 +49,3 @@ class TorchSerializedList(NumpySerializedList):
         end_addr = self._addr[idx].item()
         bytes = memoryview(self._lst[start_addr:end_addr].numpy())
         return pickle.loads(bytes)
-
-
-

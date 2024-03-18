@@ -1,3 +1,4 @@
+import os
 from typing import Any, Dict, List, Optional, Tuple
 import psutil
 import hydra
@@ -8,6 +9,23 @@ from lightning import Callback, LightningDataModule, LightningModule, Trainer
 from lightning.pytorch.loggers import Logger
 from omegaconf import DictConfig
 import multiprocessing
+from lightning.pytorch.accelerators import find_usable_cuda_devices
+from torch.autograd import profiler
+
+from pytorch_lightning.profilers import (
+    PyTorchProfiler,
+    SimpleProfiler,
+    AdvancedProfiler,
+)
+
+from pytorch_lightning.profilers.pytorch import ScheduleWrapper
+
+from torch.profiler import tensorboard_trace_handler, ProfilerAction
+import wandb
+
+import time, socket
+from datetime import datetime
+
 rootutils.setup_root(__file__, indicator=".project-root", pythonpath=True)
 # ------------------------------------------------------------------------------------ #
 # the setup_root above is equivalent to:
@@ -43,14 +61,14 @@ log = RankedLogger(__name__, rank_zero_only=True)
 def train(cfg: DictConfig) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     """Trains the model. Can additionally evaluate on a testset, using best weights obtained during
     training.
-    
+
     This method is wrapped in optional @task_wrapper decorator, that controls the behavior during
     failure. Useful for multiruns, saving info about the crash, etc.
 
     :param cfg: A DictConfig configuration composed by Hydra.
     :return: A tuple with metrics and dict with all instantiated objects.
     """
-    
+
     # set seed for random number generators in pytorch, numpy and python.random
     if cfg.get("seed"):
         L.seed_everything(cfg.seed, workers=True)
@@ -63,13 +81,84 @@ def train(cfg: DictConfig) -> Tuple[Dict[str, Any], Dict[str, Any]]:
 
     log.info("Instantiating callbacks...")
     callbacks: List[Callback] = instantiate_callbacks(cfg.get("callbacks"))
+    # print(callbacks)
 
     log.info("Instantiating loggers...")
     logger: List[Logger] = instantiate_loggers(cfg.get("logger"))
-    
+
+    # Setup the profiler with custom trace handler as a callback
+    log.info(f"Instantiating debug (profiler)...")
+    epoch_freq = 5
+    log_dir = cfg.debug.profile_dir
+
+    log.info("Instantiating profiling output directory...")
+    now = datetime.now()
+    dir_name = now.strftime("%Y-%m-%d_%H-%M")
+    log_path = os.path.join(log_dir, dir_name)
+    os.makedirs(log_path, exist_ok=True)
+
+    def output_fn(profiler, worker_id, epoch):
+        profiler.export_chrome_trace(
+            f"{log_path}/{epoch}_{worker_id}_{socket.gethostname()}.pt.trace.json"
+        )
+
+    def profileTest(current_epoch: int, epoch_freq: int):
+        if (
+            current_epoch < 2
+            or (5 <= current_epoch and current_epoch < 10)
+            or current_epoch % epoch_freq == 0
+        ):
+            return True
+        else:
+            return False
+
+    class ProfilerCallback(Callback):
+
+        def on_train_epoch_start(self, trainer, pl_module):
+            current_epoch = trainer.current_epoch
+            nr_batches = len(trainer.train_dataloader)
+            if profileTest(current_epoch=current_epoch, epoch_freq=epoch_freq):
+                pl_module.profiler = torch.profiler.profile(
+                    schedule=torch.profiler.schedule(
+                        wait=1, warmup=1, active=nr_batches - 2, repeat=1
+                    ),
+                    on_trace_ready=lambda p: output_fn(
+                        p, worker_id=trainer.global_rank, epoch=current_epoch
+                    ),
+                    record_shapes=cfg.debug.record_shapes,
+                    with_stack=cfg.debug.with_stack,
+                    profile_memory=cfg.debug.profile_memory,
+                )
+                print("Starting profiling")
+                pl_module.profiler.start()
+            pl_module.epoch_start_time = time.time()
+            print("New epoch started")
+
+        def on_train_epoch_end(self, trainer, pl_module, unused=None):
+            print("Finishing up")
+            current_epoch = trainer.current_epoch
+            if profileTest(current_epoch=current_epoch, epoch_freq=epoch_freq):
+                pl_module.profiler.stop()
+                print("Finished profiling")
+                del pl_module.profiler
+            pl_module.epoch_end_time = time.time()
+            epoch_train_time = pl_module.epoch_end_time - pl_module.epoch_start_time
+            # wandb.log({"epoch_nr": current_epoch, "epoch_train_time": epoch_train_time})
+            print(f"epoch_train_time: {epoch_train_time}")
+
+        def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx):
+            current_epoch = trainer.current_epoch
+            if profileTest(current_epoch=current_epoch, epoch_freq=epoch_freq):
+                pl_module.profiler.step()
+
+    callbacks.append(ProfilerCallback())
 
     log.info(f"Instantiating trainer <{cfg.trainer._target_}>")
-    trainer: Trainer = hydra.utils.instantiate(cfg.trainer, callbacks=callbacks, logger=logger, accelerator ='gpu')
+    trainer: Trainer = hydra.utils.instantiate(
+        cfg.trainer,
+        callbacks=callbacks,
+        logger=logger,
+    )
 
     object_dict = {
         "cfg": cfg,
@@ -78,6 +167,7 @@ def train(cfg: DictConfig) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         "callbacks": callbacks,
         "logger": logger,
         "trainer": trainer,
+        # "profiler": prof,
     }
 
     if logger:
@@ -86,7 +176,11 @@ def train(cfg: DictConfig) -> Tuple[Dict[str, Any], Dict[str, Any]]:
 
     if cfg.get("train"):
         log.info("Starting training!")
-        trainer.fit(model=model, datamodule=datamodule, ckpt_path=cfg.get("ckpt_path"))
+        start_time = time.time()
+        # trainer.fit(model=model, datamodule=datamodule, ckpt_path=cfg.get("ckpt_path"))
+        trainer.fit(model=model, datamodule=datamodule)
+        end_time = time.time()
+        print(f"Finished training in {end_time - start_time}s!!!!")
 
     train_metrics = trainer.callback_metrics
 
@@ -110,13 +204,15 @@ def train(cfg: DictConfig) -> Tuple[Dict[str, Any], Dict[str, Any]]:
 @hydra.main(version_base="1.3", config_path="../configs", config_name="train.yaml")
 def main(cfg: DictConfig) -> Optional[float]:
     """Main entry point for training.
-    
+
     :param cfg: DictConfig configuration composed by Hydra.
     :return: Optional[float] with optimized metric value.
     """
     print("At train.py entry")
-    print('RAM memory % used:', psutil.virtual_memory()[2])
-    print('RAM Used (GB):', psutil.virtual_memory()[3]/1000000000)
+    print("RAM memory % used:", psutil.virtual_memory()[2])
+    print("RAM Used (GB):", psutil.virtual_memory()[3] / 1000000000)
+    print("Usable cuda devices: ", find_usable_cuda_devices())
+
     # apply extra utilities
     # (e.g. ask for tags if none are provided in cfg, print cfg tree, etc.)
     extras(cfg)
@@ -134,4 +230,5 @@ def main(cfg: DictConfig) -> Optional[float]:
 
 
 if __name__ == "__main__":
+    print("hello world")
     main()

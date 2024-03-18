@@ -1,9 +1,10 @@
 defaults:
   - default
 
+accelerator: gpu
 strategy: ddp
 
-accelerator: gpu
-devices: 4
 num_nodes: 1
-sync_batchnorm: True
+devices: 2
+
+# sync_batchnorm: True

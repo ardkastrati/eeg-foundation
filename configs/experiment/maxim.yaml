@@ -1,0 +1,45 @@
+# @package _global_
+
+defaults:
+  - override /data: mae_test # default data config file to use is mae_test
+  - override /model: mae_small # default model config file to use is mae_test
+  - override /callbacks: null
+  - override /logger: null
+  - override /debug: profiler_test
+
+# configures the training loopspo
+trainer:
+  accelerator: gpu
+  strategy: ddp
+  devices: 8
+  min_epochs: 1 # was 50
+  max_epochs: 31 # was 55
+  sync_batchnorm: True
+
+# specifies how data should be handled during training
+data:
+  data_dir: "/home/maxihuber/eeg-foundation/src/data/000_json"
+  batch_size: 8
+  window_size: 2.0 # window for processing data (in seconds)
+  window_shift: 0.125 # amount to shift the window for each data sample (in seconds)
+  min_duration: 326 # minimum duration of the EDF recording (in seconds)
+  select_sr: [250, 256] # sample rates to select
+  select_ref: ['AR'] # references to select
+  num_workers : 2 # was 8 before, but got warning that 1 is preferred
+  target_size : [64, 2048]
+  stor_mode: "LOAD"
+
+# configures the model and its training parameters
+model:
+  img_log_frq : 5000 # frequency of logging images (every img_log_frq iterations)
+  mask_ratio : 0.15 # masking ratio for embedded patches  (was 0.15)
+  net:
+    img_size  : [64, 2048]
+    norm_pix_loss : False
+  optimizer:
+    lr: 0.0002 # learning rate
+
+test: False
+
+# metadata for this experiment run
+tags: ["implement_profiler", "tueg_subset"]

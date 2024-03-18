@@ -144,6 +144,11 @@ dmypy.json
 *.tar
 *.tar.gz
 
+# Profiling data
+/log
+/logs
+/runs
+
 # Lightning-Hydra-Template
 configs/local/default.yaml
 /data/

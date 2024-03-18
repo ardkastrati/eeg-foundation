@@ -12,6 +12,7 @@ defaults:
   - paths: default
   - extras: default
   - hydra: default
+  - debug: default
 
   # experiment configs allow for version control of specific hyperparameters
   # e.g. best hyperparameters for given model and datamodule
@@ -25,7 +26,7 @@ defaults:
   - optional local: default
 
   # debugging config (enable through command line, e.g. `python train.py debug=default)
-  - debug: null
+  # - debug: default
 
 # task name, determines output directory path
 task_name: "train"

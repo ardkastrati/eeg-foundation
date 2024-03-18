@@ -28,3 +28,80 @@ test-full: ## Run all tests
 
 train: ## Train the model
 	python src/train.py
+
+trainexp:
+	python src/train.py experiment=maxim.yaml
+
+custom:
+	srun --time 2:00:00 --gres=gpu:6 --nodelist=tikgpu10 --mem=300G --pty bash -i
+
+cpu:
+	srun --time 60 --gres=gpu:0 --mem=100G --pty bash -i
+
+gpus: ## connect to GPU server cluster
+	srun --time $(T) --gres=gpu:1 --pty bash -i
+
+gpuserver-60: ## connect to GPU server cluster
+	srun --time 60 --gres=gpu:1 --pty bash -i
+
+3gpu:
+	srun --time 60 --gres=gpu:$(N) --mem=$(MEM) --pty bash -i
+
+2node:
+	srun --time 60 --gres=gpu:2 --nodes=2 --mem=40G --pty bash -i
+
+serv:
+	srun --time 60 --gres=gpu:1 --nodelist=$(N) --pty bash -i
+
+10:
+	srun --time 60 --gres=gpu:1 --nodelist=tikgpu10 --pty bash -i
+
+logtb:
+	tensorboard --logdir="/home/maxihuber/eeg-foundation/profiler_output/profiler0"
+
+nb:
+	jupyter lab --no-browser --port=8888
+
+time:
+	squeue -u maxihuber
+
+free:
+	alias smon_free="grep --color=always --extended-regexp 'free|$' /home/sladmitet/smon.txt"
+	smon
+
+duplicate:
+	srun --time=$(T) --jobid=$(ID) --overlap --pty bash -i
+
+envinfo:
+	python src/envinfo.py
+
+compress:
+	python src/utils/compresstraces.py
+
+merge:
+	python src/utils/mergetraces.py
+
+symlinks:
+	python src/utils/symlinks.py
+
+mvprofiling:
+	find "/home/maxihuber/eeg-foundation/runs/profileroutput" -mindepth 1 -maxdepth 1 -type d -exec rsync -av --remove-source-files '{}' /itet-stor/maxihuber/net_scratch/profiling/profileroutput/ \; -exec rm -r '{}' \;
+	
+# sbatchwith_shfile:
+# 	chmod +x /home/maxihuber/eeg-foundation/train.sh
+# 	/home/maxihuber/eeg-foundation/train.sh
+
+sbatch:
+	sbatch /home/maxihuber/eeg-foundation/train.slurm
+
+output:
+	tail -f /home/maxihuber/eeg-foundation/runs/sbatch/train_$(SLURM_JOB_ID).out
+
+errout:
+	tail -f /home/maxihuber/eeg-foundation/runs/sbatch/train_$(SLURM_JOB_ID).err
+
+monitor:
+	scontrol show job $(SLURM_JOB_ID)
+
+tboard:
+	tensorboard --logdir=$(FOLDER) --bind_all --port=$(PORT)

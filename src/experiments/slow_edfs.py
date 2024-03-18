@@ -1,7 +1,7 @@
 import json
 import mne 
 import time
-path_prefix = "/itet-stor/schepasc/deepeye_storage/foundation/tueg/edf" 
+path_prefix = "/itet-stor/maxihuber/deepeye_storage/foundation/tueg/edf" 
 
 
 with open('first_run_json', 'r') as file:

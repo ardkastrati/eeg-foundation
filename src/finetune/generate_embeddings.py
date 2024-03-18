@@ -1,7 +1,5 @@
-
-
 import sys
-sys.path.append("/home/schepasc/eeg-foundation")
+sys.path.append("/home/maxihuber/eeg-foundation")
 
 import src.models.mae_original as mae
 from src.data.monai_transforms import crop_spectrogram, load_channel_data, fft_256
@@ -11,7 +9,7 @@ import lightning
 import matplotlib.pyplot as plt
 import json
 import numpy as np
-ckpt_path = "/home/schepasc/long_run1.ckpt"
+ckpt_path = "/home/maxihuber/long_run1.ckpt"
 
 
 def plot_and_save(save_dir, image, save_local = True, save_log = False, log_tag =""):
@@ -22,22 +20,14 @@ def plot_and_save(save_dir, image, save_local = True, save_log = False, log_tag 
         plt.title('Spectrogram')
         plt.colorbar(label='')
         if save_local: 
-                plt.savefig(save_dir)   
-       
+                plt.savefig(save_dir)
         plt.clf()
 
-test_path = "/itet-stor/schepasc/deepeye_storage/foundation/tueg/edf/007/aaaaabdo/s003_2012_04_06/01_tcp_ar/aaaaabdo_s003_t000.edf"
-
-
-
+test_path = "/itet-stor/maxihuber/deepeye_storage/foundation/tueg/edf/007/aaaaabdo/s003_2012_04_06/01_tcp_ar/aaaaabdo_s003_t000.edf"
 
 c_loader = load_channel_data()
 fft = fft_256()
 crop = crop_spectrogram()
-
-
-
-
 
 model = mae.MaskedAutoencoderViT(in_chans = 1,
 embed_dim = 384,
@@ -57,17 +47,15 @@ checkpoint['state_dict'] = new_state_dict
 
 model.load_state_dict(checkpoint['state_dict'])
 
-
-
 model.eval()
 model.cuda()
 
-with open("/home/schepasc/tuab_eval_labeled", 'r') as file:
+with open("/home/maxihuber/tuab_eval_labeled", 'r') as file:
         tuab_train = json.load(file)
 
-print("opening /home/schepasc/tuab_eval_labeled")
+print("opening /home/maxihuber/tuab_eval_labeled")
 
-path_prefix = "/itet-stor/schepasc/deepeye_storage/foundation/tueg/edf"
+path_prefix = "/itet-stor/maxihuber/deepeye_storage/foundation/tueg/edf"
 
 
 train_emb = {}
@@ -95,7 +83,6 @@ with torch.no_grad():
                         spg = model.forward_encoder_no_mask(spg)
                         
                         spg = spg.cpu().numpy().squeeze(0)
-                        
                         
                         spg = spg[0]
                         
