@@ -40,7 +40,7 @@ class MAEModule(LightningModule):
             img_log_frq : 1000,
             learning_rate = 0.0002,
             mask_ratio = 0.5,
-            pretrain_ckpt = "/itet-stor/schepasc/net_scratch/ckpts/epoch34_mask30.ckpt"
+            pretrain_ckpt = "/itet-stor/maxihuber/net_scratch/ckpts/epoch34_mask30.ckpt"
         ) -> None:
             
 

@@ -15,7 +15,7 @@ import numpy as np
 
 train = True
 stor_path = ""
-ckpt_path = "/itet-stor/schepasc/net_scratch/ckpts/epoch34_mask30.ckpt"
+ckpt_path = "/itet-stor/maxihuber/net_scratch/ckpts/epoch34_mask30.ckpt"
 
 
 c_loader = load_channel_data(precrop=False)
@@ -54,12 +54,12 @@ model.cuda()
 if train:
 
     with open(
-        "/home/schepasc/eeg-foundation/indices_and_labels/tuab_train_labeled", "r"
+        "/home/maxihuber/eeg-foundation/indices_and_labels/tuab_train_labeled", "r"
     ) as file:
         tuab_train = json.load(file)
 else:
     with open(
-        "/home/schepasc/eeg-foundation/indices_and_labels/tuab_eval_labeled", "r"
+        "/home/maxihuber/eeg-foundation/indices_and_labels/tuab_eval_labeled", "r"
     ) as file:
         tuab_train = json.load(file)
 
