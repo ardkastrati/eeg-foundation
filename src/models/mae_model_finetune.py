@@ -513,7 +513,15 @@ class MaskedAutoencoderViT(nn.Module):
 
         return loss_recon, pred, mask, loss_contrastive
     
+    def freeze_encoder(self):
 
+        #freeze weights of encoder blocks
+        self.blocks.requires_grad = False
+
+    def unfreeze_encoder(self):
+
+        #unfreeze weights of encoder blocks
+        self.blocks.requires_grad = True
     def forward_entire_edf(self, edf_data, mask_ratio =0.8):
 
         #takes as input an entire edf file, separated into channels. each channel is separated into 1024,128 spectrograms.

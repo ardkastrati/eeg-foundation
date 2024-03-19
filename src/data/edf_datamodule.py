@@ -12,8 +12,25 @@ from torch.utils.data import ConcatDataset, DataLoader, Dataset, random_split
 from torchvision.transforms import transforms
 import src.utils.serialize as serialize
 import tracemalloc
+import src.data.saving as save
+import tempfile
+import os
 
-# https://lightning.ai/docs/pytorch/stable/data/datamodule.html#lightningdatamodule
+class SimpleDataset(Dataset):
+    
+    def __init__(self, spg_paths):
+
+        self.spg_paths = spg_paths
+    
+    def __getitem__(self, idx):
+
+        spg = np.load(self.spg_paths[idx])
+        spg = torch.from_numpy(spg)
+        spg = spg.unsqueeze(0)
+        return spg
+
+    def __len__(self):
+# https://lightning.ai/docs/pytorch/stable/data/datamodule.html#lightningdatamodule    return len(self.spg_paths)
 
 
 class EDFDataModule(LightningDataModule):
@@ -41,6 +58,7 @@ class EDFDataModule(LightningDataModule):
             0.05,
         ],  # proportion of data to be used for training and validation
         TMPDIR="",  # temporary directory for storing intermediate data (e.g. for caching)
+        STORDIR = "/dev/shm/mae",
         target_size=[
             64,
             2048,
@@ -75,7 +93,7 @@ class EDFDataModule(LightningDataModule):
         self.file_index = []
         self.target_size = target_size
 
-        # Build index for pathnames to the EEG data
+        self.STORDIR = STORDIR        # Build index for pathnames to the EEG data
         self.build_channel_index(
             min_duration=self.min_duration,
             max_duration=self.max_duration,
@@ -97,6 +115,8 @@ class EDFDataModule(LightningDataModule):
 
         Could be put into utils, also used in EDFDataModule...
         """
+        d_index = []
+        
         with open(self.data_dir, "r") as file:
             data = json.load(file)
 
@@ -116,75 +136,62 @@ class EDFDataModule(LightningDataModule):
                 and duration <= max_duration
             ):
                 for chn in channel_names:
-                    self.index.append({"path": self.path_prefix + path, "chn": chn})
+                    d_index.append({'path' : self.path_prefix+path, 'chn' : chn})
 
-        print("len of created data_dir index: ", len(self.index))
+        print("len of created data_dir index: ", len(d_index))
 
     # This is where I will have the most impact
     # See https://lightning.ai/docs/pytorch/stable/data/datamodule.html#prepare-data
     def prepare_data(self) -> None:
+        
         """
-        if self.stor_mode == "CACHE_SERIALIZE":
-
-            self.cache = {}
-
-            #Here I would load the EEG channels, compute the spectrograms. For debugging/simplicity purpose I just load random np arrays.
-            slist = []
-            for idx, line in enumerate(self.index):
-                if(idx % 1000 == 0):
-                    print(idx)
-                #self.cache[idx] = load(line)
-                spec = np.random.rand(64, 2048)
-                spec = spec.reshape(1, 64, 2048)
-                slist.append(spec)
-            self.cache = serialize.NumpySerializedList(slist)
-
-        if self.stor_mode == "CACHE":
-
-            self.cache = {}
-
-            #Here I would load the EEG channels, compute the spectrograms. For debugging/simplicity purpose I just load random np arrays.
-
-            for idx, line in enumerate(self.index):
-                if(idx % 1000 == 0):
-                    print(idx)
-                #self.cache[idx] = load(line)
-                spec = np.random.rand(64, 2048)
-                spec = spec.reshape(1, 64, 2048)
-                self.cache[idx] = spec
-
+        ATTENTION: When using multiple GPU to train, needs the newest lightning dev-build. There is a barrier for all processes here, and in stable release lightning, 
+        it will timeout after 30 min, which is usually not enough to store all the spectrograms.
+        Here you can store data on the local machine. 
         """
+        print("preparing data")
 
-    def setup(self, stage=None) -> None:
+        #build an index, you can select which files you want to include with parameters.
+        raw_paths = self.build_channel_index(max_duration=self.max_duration, min_duration=self.min_duration, select_sr=self.select_sr, select_ref=self.select_ref)
 
-        print("Before dataset creation")
-        print("RAM memory % used:", psutil.virtual_memory()[2])
-        print("RAM Used (GB):", psutil.virtual_memory()[3] / 1000000000)
 
-        # entire_dataset = CacheDataset(self.cache, num_workers=self.num_workers)
-        # if self.stor_mode == "LOAD" :
-        #     entire_dataset = custom_data.EDFDataset(
-        #         self.data_dir,
-        #         target_size=self.target_size,
-        #         window_size=self.window_size,
-        #         window_shift=self.window_shift,
-        #         min_duration=self.min_duration,
-        #         select_sr = self.select_sr,
-        #         select_ref = self.select_ref,
-        #         interpolate_250to256 = self.interpolate_250to256
-        #         )
+        #save the spectrograms. note that these attributes are not shared by the processes on other GPUs, that's why an index is saved in the /tmp directory.
+        #Also returning the temporary directory objects, so that they don't close themselfes. Can close them in the teardown section (for example at beginning of the testing loop)
+        self.spg_paths, self.parent, self.subdir = save.load_and_save_spgs(raw_paths, STORDIR = self.STORDIR,TMPDIR = self.TMPDIR)
+        
 
-        # Instanziate Dataset
-        entire_dataset = custom_data.EDFDataset(
-            self.data_dir,
-            target_size=self.target_size,
-            window_size=self.window_size,
-            window_shift=self.window_shift,
-            min_duration=self.min_duration,
-            select_sr=self.select_sr,
-            select_ref=self.select_ref,
-            interpolate_250to256=self.interpolate_250to256,
-        )
+    def setup(self, stage= None) -> None: 
+
+
+        print("before dataset creation")
+        print('RAM memory % used:', psutil.virtual_memory()[2])
+        print('RAM Used (GB):', psutil.virtual_memory()[3]/1000000000) 
+          
+        #entire_dataset = CacheDataset(self.cache, num_workers=self.num_workers)
+        """
+        if self.stor_mode == "LOAD" :
+            entire_dataset = custom_data.EDFDataset(
+                self.data_dir,
+                target_size=self.target_size,
+                window_size=self.window_size,
+                window_shift=self.window_shift,
+                min_duration=self.min_duration,
+                select_sr = self.select_sr,
+                select_ref = self.select_ref,
+                interpolate_250to256 = self.interpolate_250to256
+                )
+        
+        """
+        #access the index in the tmpdir, so each process has it.
+        with open(os.path.join(self.TMPDIR, "index_path.txt"), 'r') as file:
+            index_path = file.read()
+        #load the index and change the keys back to integers, since they get converted to strings on saving.
+        with open(index_path, 'r') as file:
+            paths = json.load(file)
+            paths = {int(key): value for key, value in paths.items()}
+        
+        
+        entire_dataset = SimpleDataset(paths)
 
         train_size = int(self.train_val_split[0] * len(entire_dataset))
         val_size = len(entire_dataset) - train_size
@@ -214,9 +221,8 @@ class EDFDataModule(LightningDataModule):
     def test_dataloader(self):
         # QUESTION: why are we using val_dataset for testing
 
-        return DataLoader(
-            self.val_dataset, batch_size=self.batch_size, num_workers=self.num_workers
-        )
+        
+        pass
 
     def predict_dataloader(self):
         pass
@@ -228,6 +234,9 @@ class EDFDataModule(LightningDataModule):
         :param stage: The stage being torn down. Either `"fit"`, `"validate"`, `"test"`, or `"predict"`.
             Defaults to ``None``.
         """
+
+        #can optionally delete the temporary directory here after the training is done.
+        
         pass
 
     def state_dict(self):

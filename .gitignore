@@ -148,6 +148,7 @@ dmypy.json
 /log
 /logs
 /runs
+/temp
 
 # Lightning-Hydra-Template
 configs/local/default.yaml

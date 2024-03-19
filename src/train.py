@@ -9,6 +9,7 @@ from lightning import Callback, LightningDataModule, LightningModule, Trainer
 from lightning.pytorch.loggers import Logger
 from omegaconf import DictConfig
 import multiprocessing
+import tempfile
 from lightning.pytorch.accelerators import find_usable_cuda_devices
 from torch.autograd import profiler
 
@@ -70,8 +71,8 @@ def train(cfg: DictConfig) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     """
 
     # set seed for random number generators in pytorch, numpy and python.random
-    if cfg.get("seed"):
-        L.seed_everything(cfg.seed, workers=True)
+
+    L.seed_everything(42, workers=True)
 
     log.info(f"Instantiating datamodule <{cfg.data._target_}>")
     datamodule: LightningDataModule = hydra.utils.instantiate(cfg.data)

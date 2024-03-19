@@ -16,7 +16,7 @@ scheduler:
   patience: 10
 
 net:
-  _target_: src.models.mae_model_finetune.MaskedAutoencoderViT
+  _target_: src.models.mae_original.MaskedAutoencoderViT
   in_chans: 1
   embed_dim: 384
   depth: 12

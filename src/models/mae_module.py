@@ -11,6 +11,8 @@ import numpy as np
 import time
 import sys
 
+import timm.optim.optim_factory as optim_factory
+
 from torch.profiler import profile, tensorboard_trace_handler
 
 # https://lightning.ai/docs/pytorch/stable/common/lightning_module.html#lightningmodule
@@ -145,8 +147,8 @@ class MAEModule(LightningModule):
         pass
 
     def configure_optimizers(self):
-        # keeping it simple
-        optimizer = torch.optim.Adam(self.net.parameters(), lr=self.learning_rate)
+        param_groups = optim_factory.add_weight_decay(self.net, 0.0001)
+        optimizer = torch.optim.AdamW(param_groups, lr=0.0002, betas=(0.9, 0.95))
         return optimizer
 
     def plot_and_save(

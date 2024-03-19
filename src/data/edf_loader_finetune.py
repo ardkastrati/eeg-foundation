@@ -120,6 +120,7 @@ class EDFDataset(Dataset):
     
     def __len__(self):
         
+        
         return len(self.data)
     
     def __getitem__(self, idx):
@@ -135,7 +136,7 @@ class EDFDataset(Dataset):
         raw = mne.io.read_raw_edf(self.path_prefix+path, preload=False)
         channels = raw.ch_names
         spgs = []
-        print("getting")
+        
         for chn in channels:
             
             if "EEG" not in chn:
@@ -158,16 +159,11 @@ class EDFDataset(Dataset):
             spectrogram = (spectrogram - torch.mean(spectrogram)) / (torch.std(spectrogram) * 2)
             spgs.append(spectrogram)
             
-        
-
-        
-        allocated_memory = torch.cuda.memory_allocated()
-        
-        
         while len(spgs) < 1:
             spgs.append(torch.zeros(1, 64, 2048))
         
         return (spgs, lbl)
+    
 class CropSpectrogram(object):
 
     def __init__(self, target_size):

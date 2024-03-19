@@ -2,6 +2,7 @@ import src.models.mae_original as mae
 import wandb
 import torch
 from lightning import LightningModule
+from torchmetrics.classification import BinaryAccuracy
 from torchmetrics import MaxMetric, MeanMetric
 from torchmetrics.classification.accuracy import Accuracy
 import matplotlib.pyplot as plt
@@ -31,16 +32,20 @@ class MLPClass(torch.nn.Module):
 class MAEModule(LightningModule):
 
     def __init__(
-        self,
-        net: torch.nn.Module,
-        optimizer: torch.optim.Optimizer,
-        scheduler: torch.optim.lr_scheduler,
-        compile: bool,
-        img_log_frq: 1000,
-        learning_rate=0.0002,
-        mask_ratio=0.5,
-        pretrain_ckpt="/home/maxihuber/long_run1.ckpt",
-    ) -> None:
+            self,
+            net: torch.nn.Module,
+            optimizer: torch.optim.Optimizer,
+            scheduler: torch.optim.lr_scheduler,
+            compile: bool,
+            img_log_frq : 1000,
+            learning_rate = 0.0002,
+            mask_ratio = 0.5,
+            pretrain_ckpt = "/itet-stor/schepasc/net_scratch/ckpts/epoch34_mask30.ckpt"
+        ) -> None:
+            
+
+            
+
 
         super().__init__()
 
@@ -50,9 +55,9 @@ class MAEModule(LightningModule):
         self.img_log_frq = img_log_frq
         self.net = net
 
-        emb_dim = self.net.embed_dim
+            self.embed_dim = self.net.embed_dim
 
-        self.MLP = MLPClass(emb_dim)
+            self.MLP = MLPClass(self.embed_dim)
 
         checkpoint = torch.load(pretrain_ckpt)
 
@@ -70,11 +75,17 @@ class MAEModule(LightningModule):
         self.learning_rate = learning_rate
         self.mask_ratio = mask_ratio
 
+            self.train_acc = BinaryAccuracy()
+            self.val_acc = BinaryAccuracy()
+            #freeze pretrained weights for first epochs to avoid catastrophic unlearning
+            print("freezing encoder")
+            self.net.freeze_encoder()
+
     def forward(self, x):
-
-        predictions = self.net.forward_finetune(x)
-
-        # input is batchsize * [#channels]
+          
+        
+    
+        #input is batchsize * [#channels]
         predictions = torch.zeros(len(x))
 
         for i, sample in enumerate(x):
@@ -108,18 +119,27 @@ class MAEModule(LightningModule):
 
         predictions = self.forward(x)
         lossfn = torch.nn.BCELoss()
-        print("predictions are")
-        print(predictions)
+        
         loss = lossfn(predictions, y)
-        print("loss is")
-        print(loss.item())
-        self.log("train_loss", loss.item(), on_epoch=True)
+        
+        self.train_acc.update(predictions, y)
+        
 
         return loss
+    
+    def on_train_epoch_end(self): 
+       
+        self.log("train_acc", self.train_acc.compute())
+        
 
-    def on_train_epoch_end(self):
+        if self.current_epoch == 30:
+            print("unfreezing")
+            self.net.unfreeze_encoder()
+            self.trainer.optimizers[0].param_groups[0]['lr'] = 0.0002
 
-        pass
+        
+        
+        
 
     def validation_step(self, batch, batch_idx):
 
@@ -127,17 +147,46 @@ class MAEModule(LightningModule):
 
         y = y.float()
         y = y.cpu()
-        pred = self.forward(x)
+        predictions = torch.zeros(len(x))
+        for i, sample in enumerate(x):
+            
+            num_channels = len(sample)
+            emb_sum = torch.zeros(self.embed_dim)
+            emb_sum = emb_sum.cuda()
+            
+           
+            for spg in sample:
+                
+                spg = spg.unsqueeze(0)
+                emb = self.net.forward_encoder_no_mask(spg)
+               
+                emb = emb[0][0]
+                
+                emb_sum = emb_sum + emb
 
-        lossfn = torch.nn.BCELoss()
+            emb_sum = emb_sum / num_channels
+            
+            pred = self.MLP(emb_sum)
 
-        loss = lossfn(pred, y)
-        print(loss.item())
-        self.log("val_loss", loss.item(), on_epoch=True)
+            predictions[i] = pred
+        
+        
+
+        self.val_acc(predictions, y)
+        
+        
+        
+        
+    def on_validation_epoch_end(self):
+    
+        self.log("val_acc", self.val_acc.compute())
+        
+
+
 
     def configure_optimizers(self):
-        # keeping it simple
-        optimizer = torch.optim.Adam(self.net.parameters(), lr=self.learning_rate)
+        #keeping it simple
+        optimizer = torch.optim.Adam(list(self.net.parameters()) +  list(self.MLP.parameters()), lr=self.learning_rate)
         return optimizer
 
     def visualize_plots(self, batch, local_tag, log_tag):
