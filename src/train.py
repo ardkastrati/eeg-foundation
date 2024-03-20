@@ -230,6 +230,27 @@ def main(cfg: DictConfig) -> Optional[float]:
     return metric_value
 
 
+import sys, socket
+
+
+class HostnamePrefixStream:
+    def __init__(self, orig_stdout):
+        self.orig_stdout = orig_stdout
+        self.hostname = socket.gethostname()
+
+    def write(self, message):
+        lines = message.split("\n")
+        for line in lines:
+            if line.strip():  # To skip empty lines
+                self.orig_stdout.write(f"[{self.hostname}] {line}\n")
+        self.orig_stdout.flush()
+
+    def flush(self):
+        self.orig_stdout.flush()
+
+
 if __name__ == "__main__":
+    # Redirect sys.stdout to the custom stream
+    sys.stdout = HostnamePrefixStream(sys.stdout)
     print("hello world")
     main()

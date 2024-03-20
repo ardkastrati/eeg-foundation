@@ -2,28 +2,32 @@ import os
 import glob
 
 
-def make_symlinks(basedir, run_folder, symlink_basedir):
-    merged_dir = os.path.join(basedir, run_folder, "merged0")
-    symlinks_dir = os.path.join(symlink_basedir, f"symlinks0_{run_folder}")
+def make_sym_dir(sym_base, sym_folder):
+    sym_dir = os.path.join(sym_base, sym_folder)
+    os.makedirs(sym_dir, exist_ok=True)
+    return sym_dir
 
-    # Create the 'symlinks' directory if it doesn't exist
-    if not os.path.exists(symlinks_dir):
-        os.makedirs(symlinks_dir)
 
-    merged_files = glob.glob(os.path.join(merged_dir, "*"))
+def make_symlinks(epoch_dir, epoch, sym_dir):
+    merge_dir = os.path.join(epoch_dir, f"{epoch}_epoch_merged")
+    sym_link_path = os.path.join(sym_dir, f"{epoch}_epoch_merged")
+    os.symlink(merge_dir, sym_link_path)
+    # print(f"Created symlink for {merge_dir}")
 
-    for file_path in merged_files:
-        # Extract the filename from the file_path
-        file_name = os.path.basename(file_path)
+    # merged_files = glob.glob(os.path.join(merged_dir, "*"))
 
-        # Path for the symlink in the 'symlinks' directory
-        symlink_path = os.path.join(symlinks_dir, file_name)
+    # for file_path in merged_files:
+    #     # Extract the filename from the file_path
+    #     file_name = os.path.basename(file_path)
 
-        # Create a symlink for the file in the 'symlinks' directory
-        # Use os.path.relpath to create a relative path to the target
-        relative_target_path = os.path.relpath(file_path, symlinks_dir)
-        os.symlink(relative_target_path, symlink_path)
-        print(f"Created symlink for {file_name}")
+    #     # Path for the symlink in the 'symlinks' directory
+    #     symlink_path = os.path.join(sym_dir, file_name)
+
+    #     # Create a symlink for the file in the 'symlinks' directory
+    #     # Use os.path.relpath to create a relative path to the target
+    #     relative_target_path = os.path.relpath(file_path, sym_dir)
+    #     os.symlink(relative_target_path, symlink_path)
+    #     print(f"Created symlink for {file_name}")
 
 
 if __name__ == "__main__":

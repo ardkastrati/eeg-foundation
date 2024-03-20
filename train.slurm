@@ -1,13 +1,14 @@
 #!/bin/bash
 
-#SBATCH --mail-type=NONE         # mail configuration: NONE, BEGIN, END, FAIL, REQUEUE, ALL
+#SBATCH --mail-type=ALL         # mail configuration: NONE, BEGIN, END, FAIL, REQUEUE, ALL
 #SBATCH --output=/home/maxihuber/eeg-foundation/runs/sbatch/train_%j.out
 #SBATCH --error=/home/maxihuber/eeg-foundation/runs/sbatch/train_%j.err
-#SBATCH --gres=gpu:8
-#SBATCH --ntasks-per-node=8
-#SBATCH --nodelist=tikgpu10
+#SBATCH --nodes=2
+#SBATCH --gres=gpu:1
+#SBATCH --ntasks-per-node=1
+#SBATCH --open-mode=append
 #SBATCH --mem=300G
-#SBATCH --time=01:00:00
+#SBATCH --time=02:00:00
 
 # Exit on errors
 set -o errexit
@@ -22,10 +23,12 @@ conda activate fastenv
 cd /home/maxihuber/eeg-foundation/
 
 # Send some noteworthy information to the output log
-echo "Running on node: $(hostname)"
-echo "In directory:    $(pwd)"
-echo "Starting on:     $(date)"
-echo "SLURM_JOB_ID:    ${SLURM_JOB_ID}"
+for node in $(scontrol show hostname $SLURM_JOB_NODELIST); do
+    echo "Running on node: $node"
+    echo "In directory:    $(pwd)"
+    echo "Starting on:     $(date)"
+    echo "SLURM_JOB_ID:    ${SLURM_JOB_ID}"
+done
 
 # Binary or script to execute
 srun python /home/maxihuber/eeg-foundation/src/train.py experiment=maxim.yaml

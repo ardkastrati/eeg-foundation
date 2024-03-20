@@ -108,6 +108,7 @@ venv/
 ENV/
 env.bak/
 venv.bak/
+.yml
 
 # Spyder project settings
 .spyderproject
@@ -149,6 +150,9 @@ dmypy.json
 /logs
 /runs
 /temp
+
+# Runs
+index_path*.txt
 
 # Lightning-Hydra-Template
 configs/local/default.yaml

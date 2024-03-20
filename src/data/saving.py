@@ -9,6 +9,7 @@ import numpy as np
 import tempfile
 import os
 import time
+import socket
 
 
 def load_and_save_spgs(
@@ -20,7 +21,7 @@ def load_and_save_spgs(
     target_size=(64, 2048),
 ):
     """
-     Stores the spectrograms using the NUMPY library. You can chose where to store them.
+    Stores the spectrograms using the NUMPY library. You can chose where to store them.
     It divides them into directories of 1000 files each, I ran into problems with storing 200'000+ files in one directory.
 
     I have used /scratch (the local storage of the computing node) and if you have enough memory available /dev/shm is an option (basicly just a filesystem
@@ -30,6 +31,7 @@ def load_and_save_spgs(
 
     print("using temporary directory   : " + TMPDIR)
     print("storing in directory: " + STORDIR)
+
     spg_index = {}
     n_samples = len(raw_paths)
     n_directories = (n_samples // 1000) + 1
@@ -37,8 +39,15 @@ def load_and_save_spgs(
     fft = fft_256(window_size=window_size, window_shift=window_shift, cuda=True)
     crop = crop_spectrogram(target_size=target_size)
 
+    # parent = tempfile.TemporaryDirectory(dir=STORDIR, delete=False)
+    if not os.path.exists(STORDIR):
+        os.makedirs(
+            STORDIR
+        )  # This will create the directory if it does not exist, given proper permissions.
+    elif not os.access(STORDIR, os.W_OK):
+        print(f"The directory {STORDIR} is not writable. Please check the permissions.")
+
     parent = tempfile.TemporaryDirectory(dir=STORDIR)
-    # parent = tempfile.mkdtemp(dir = STORDIR)
     subdir = {}
     data_index = {}
     for i in range(n_directories):
@@ -77,7 +86,9 @@ def load_and_save_spgs(
     with open(index_path, "w") as file:
         json.dump(data_index, file)
 
-    with open(os.path.join(TMPDIR, "index_path.txt"), "w") as file:
+    with open(
+        os.path.join(TMPDIR, f"index_path{socket.gethostname()}.txt"), "w"
+    ) as file:
         file.write(index_path)
 
     return data_index, parent, subdir

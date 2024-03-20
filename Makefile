@@ -33,7 +33,7 @@ trainexp:
 	python src/train.py experiment=maxim.yaml
 
 custom:
-	srun --time 2:00:00 --gres=gpu:6 --nodelist=tikgpu10 --mem=300G --pty bash -i
+	srun --time 2:00:00 --gres=gpu:8 --nodelist=tikgpu02 --mem=300G --pty bash -i
 
 cpu:
 	srun --time 60 --gres=gpu:0 --mem=100G --pty bash -i
@@ -70,7 +70,7 @@ free:
 	smon
 
 duplicate:
-	srun --time=$(T) --jobid=$(ID) --overlap --pty bash -i
+	srun --jobid=$(ID) --overlap --pty bash -i
 
 envinfo:
 	python src/envinfo.py
@@ -84,9 +84,12 @@ merge:
 symlinks:
 	python src/utils/symlinks.py
 
-mvprofiling:
-	find "/home/maxihuber/eeg-foundation/runs/profileroutput" -mindepth 1 -maxdepth 1 -type d -exec rsync -av --remove-source-files '{}' /itet-stor/maxihuber/net_scratch/profiling/profileroutput/ \; -exec rm -r '{}' \;
-	
+mvtraces:
+	python src/utils/movetraces.py
+
+visualize:
+	python src/utils/visualization_pipeline.py
+
 # sbatchwith_shfile:
 # 	chmod +x /home/maxihuber/eeg-foundation/train.sh
 # 	/home/maxihuber/eeg-foundation/train.sh
@@ -95,13 +98,13 @@ sbatch:
 	sbatch /home/maxihuber/eeg-foundation/train.slurm
 
 output:
-	tail -f /home/maxihuber/eeg-foundation/runs/sbatch/train_$(SLURM_JOB_ID).out
+	tail -f /home/maxihuber/eeg-foundation/runs/sbatch/train_$(ID).out
 
 errout:
-	tail -f /home/maxihuber/eeg-foundation/runs/sbatch/train_$(SLURM_JOB_ID).err
+	tail -f /home/maxihuber/eeg-foundation/runs/sbatch/train_$(ID).err
 
 monitor:
-	scontrol show job $(SLURM_JOB_ID)
+	scontrol show job $(ID)
 
 tboard:
 	tensorboard --logdir=$(FOLDER) --bind_all --port=$(PORT)

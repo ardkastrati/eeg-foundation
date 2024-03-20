@@ -3,10 +3,10 @@ import json
 import glob
 
 
-def merge_trace_files(log_dir, epoch):
+def merge_trace_files(epoch_dir, epoch):
     # Pattern to match all trace files for the specified epoch across all worker IDs
     pattern = os.path.join(
-        log_dir, "compressed_nomem", f"compressed_{epoch}_*.pt.trace.json"
+        epoch_dir, "compressed_nomem", f"compressed_{epoch}_*.pt.trace.json"
     )
     trace_files = glob.glob(pattern)
 
@@ -23,12 +23,12 @@ def merge_trace_files(log_dir, epoch):
                 # Merge traceEvents from other files
                 merged_trace["traceEvents"].extend(trace_data["traceEvents"])
 
-    mergedir = os.path.join(log_dir, "merged_nomem")
-    os.makedirs(name=mergedir, exist_ok=True)
+    merge_dir = os.path.join(epoch_dir, f"{epoch}_epoch_merged")
+    os.makedirs(name=merge_dir, exist_ok=True)
 
     # Save the merged trace to a new file
     if merged_trace:
-        output_filename = os.path.join(mergedir, f"merged_{epoch}.pt.trace.json")
+        output_filename = os.path.join(merge_dir, f"merged_{epoch}.pt.trace.json")
         with open(output_filename, "w") as f:
             json.dump(merged_trace, f, indent=2)
         print(f"Merged trace file saved to {output_filename}")
@@ -43,9 +43,7 @@ if __name__ == "__main__":
         "/itet-stor/maxihuber/net_scratch/profiling/profileroutput/2024-03-16_20-42",
         "/itet-stor/maxihuber/net_scratch/profiling/profileroutput/2024-03-16_21-26",
     ]
-    log_dir = (
-        "/itet-stor/maxihuber/net_scratch/profiling/profileroutput/2024-03-16_19-40"
-    )
+    log_dir = "/itet-stor/maxihuber/net_scratch/profiling/profileroutput/2024-03-19_18-16/0_epoch"
     merge_trace_files(log_dir, 0)
     # for epoch in [0, 1, 5, 6, 7, 8, 9, 10, 15, 20, 25, 30]:
     #     merge_trace_files(log_dir, epoch)

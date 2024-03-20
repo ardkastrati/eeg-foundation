@@ -52,7 +52,6 @@ model.cuda()
 
 
 if train:
-
     with open(
         "/home/maxihuber/eeg-foundation/indices_and_labels/tuab_train_labeled", "r"
     ) as file:
