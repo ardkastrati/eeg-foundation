@@ -18,11 +18,11 @@ from symlinks import make_sym_dir, make_symlinks
 log_base = "/itet-stor/maxihuber/net_scratch/profiling/profileroutput"
 sym_base = "/home/maxihuber/eeg-foundation/temp"
 
-log_folders = ["2024-03-23_15-19", "2024-03-23_15-36"]
+log_folders = ["2024-03-23_15-19", "2024-03-23_15-36", "2024-03-23_16-02"]
 epochs = [0, 1, 5, 6, 7, 8, 9, 10, 15, 20, 25, 30]
 
 for log_folder in log_folders:
-    for epoch in [0, 1, 5]:
+    for epoch in epochs:
         epoch_dir = make_epoch_dir(
             log_base=log_base, log_folder=log_folder, epoch=epoch
         )
