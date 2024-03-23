@@ -22,6 +22,9 @@ import wandb
 
 
 class EDFDataset(Dataset):
+    """
+    Not used anymore I think!
+    """
 
     def __init__(
         self,
@@ -147,7 +150,7 @@ class EDFDataset(Dataset):
         time_end = time.time()
 
         read_edf_time = time_end - time_start
-        # wandb.log({"edf_open_time": read_edf_time})
+        # self.log({"edf_open_time": read_edf_time})
 
         # data = edf_data.get_data()
         # print("opening took" + str(open_time))
@@ -163,7 +166,7 @@ class EDFDataset(Dataset):
         time_end = time.time()
 
         channel_load_time = time_end - time_start
-        # wandb.log({"channel_load_time": channel_load_time})
+        # self.log({"channel_load_time": channel_load_time})
 
         # convert the signal from volts to microvolts
         # this is apparently a common practice in EEG processing (necessary because EEG signals are typically very small in amplitude)

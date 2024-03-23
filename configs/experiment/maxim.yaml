@@ -11,11 +11,11 @@ defaults:
 trainer:
   accelerator: gpu
   strategy: ddp
-  num_nodes: 2
-  devices: 1
   min_epochs: 1 # was 50
-  max_epochs: 6 # was 55
+  max_epochs: 31 # was 55
   sync_batchnorm: True
+  # num_nodes: 2
+  # devices: 3
 
 # specifies how data should be handled during training
 data:
@@ -26,7 +26,7 @@ data:
   min_duration: 326 # minimum duration of the EDF recording (in seconds)
   select_sr: [250, 256] # sample rates to select
   select_ref: ['AR'] # references to select
-  num_workers : 0 # was 8 before, but got warning that 1 is preferred
+  num_workers : 4 # was 8 before, but got warning that 1 is preferred
   target_size : [64, 2048]
   stor_mode: "LOAD"
 
@@ -43,4 +43,4 @@ model:
 test: False
 
 # metadata for this experiment run
-tags: ["implement_profiler", "tueg_subset"]
+tags: ["multi-node"]

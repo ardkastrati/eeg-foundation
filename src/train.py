@@ -13,19 +13,10 @@ import tempfile
 from lightning.pytorch.accelerators import find_usable_cuda_devices
 from torch.autograd import profiler
 
-from pytorch_lightning.profilers import (
-    PyTorchProfiler,
-    SimpleProfiler,
-    AdvancedProfiler,
-)
-
-from pytorch_lightning.profilers.pytorch import ScheduleWrapper
-
-from torch.profiler import tensorboard_trace_handler, ProfilerAction
-import wandb
-
 import time, socket
 from datetime import datetime
+
+import wandb
 
 rootutils.setup_root(__file__, indicator=".project-root", pythonpath=True)
 # ------------------------------------------------------------------------------------ #
@@ -53,6 +44,7 @@ from src.utils import (
     instantiate_loggers,
     log_hyperparameters,
     task_wrapper,
+    ProfilerCallback,
 )
 
 log = RankedLogger(__name__, rank_zero_only=True)
@@ -71,7 +63,6 @@ def train(cfg: DictConfig) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     """
 
     # set seed for random number generators in pytorch, numpy and python.random
-
     L.seed_everything(42, workers=True)
 
     log.info(f"Instantiating datamodule <{cfg.data._target_}>")
@@ -82,81 +73,35 @@ def train(cfg: DictConfig) -> Tuple[Dict[str, Any], Dict[str, Any]]:
 
     log.info("Instantiating callbacks...")
     callbacks: List[Callback] = instantiate_callbacks(cfg.get("callbacks"))
-    # print(callbacks)
+
+    log.info(f"Instantiating profiling callbacks...")
+    callbacks.append(
+        ProfilerCallback(
+            log_dir=cfg.debug.profile_dir,
+            record_shapes=cfg.debug.record_shapes,
+            with_stack=cfg.debug.with_stack,
+            profile_memory=cfg.debug.profile_memory,
+            log_epoch_freq=5,
+            hostname=socket.gethostname(),
+        )
+    )
 
     log.info("Instantiating loggers...")
     logger: List[Logger] = instantiate_loggers(cfg.get("logger"))
-
-    # Setup the profiler with custom trace handler as a callback
-    log.info(f"Instantiating debug (profiler)...")
-    epoch_freq = 5
-    log_dir = cfg.debug.profile_dir
-
-    log.info("Instantiating profiling output directory...")
-    now = datetime.now()
-    dir_name = now.strftime("%Y-%m-%d_%H-%M")
-    log_path = os.path.join(log_dir, dir_name)
-    os.makedirs(log_path, exist_ok=True)
-
-    def output_fn(profiler, worker_id, epoch):
-        profiler.export_chrome_trace(
-            f"{log_path}/{epoch}_{worker_id}_{socket.gethostname()}.pt.trace.json"
-        )
-
-    def profileTest(current_epoch: int, epoch_freq: int):
-        if (
-            current_epoch < 2
-            or (5 <= current_epoch and current_epoch < 10)
-            or current_epoch % epoch_freq == 0
-        ):
-            return True
-        else:
-            return False
-
-    class ProfilerCallback(Callback):
-
-        def on_train_epoch_start(self, trainer, pl_module):
-            current_epoch = trainer.current_epoch
-            nr_batches = len(trainer.train_dataloader)
-            if profileTest(current_epoch=current_epoch, epoch_freq=epoch_freq):
-                pl_module.profiler = torch.profiler.profile(
-                    schedule=torch.profiler.schedule(
-                        wait=1, warmup=1, active=nr_batches - 2, repeat=1
-                    ),
-                    on_trace_ready=lambda p: output_fn(
-                        p, worker_id=trainer.global_rank, epoch=current_epoch
-                    ),
-                    record_shapes=cfg.debug.record_shapes,
-                    with_stack=cfg.debug.with_stack,
-                    profile_memory=cfg.debug.profile_memory,
-                )
-                print("Starting profiling")
-                pl_module.profiler.start()
-            pl_module.epoch_start_time = time.time()
-            print("New epoch started")
-
-        def on_train_epoch_end(self, trainer, pl_module, unused=None):
-            print("Finishing up")
-            current_epoch = trainer.current_epoch
-            if profileTest(current_epoch=current_epoch, epoch_freq=epoch_freq):
-                pl_module.profiler.stop()
-                print("Finished profiling")
-                del pl_module.profiler
-            pl_module.epoch_end_time = time.time()
-            epoch_train_time = pl_module.epoch_end_time - pl_module.epoch_start_time
-            # wandb.log({"epoch_nr": current_epoch, "epoch_train_time": epoch_train_time})
-            print(f"epoch_train_time: {epoch_train_time}")
-
-        def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx):
-            current_epoch = trainer.current_epoch
-            if profileTest(current_epoch=current_epoch, epoch_freq=epoch_freq):
-                pl_module.profiler.step()
-
-    callbacks.append(ProfilerCallback())
+    if logger in cfg and "wandb" in cfg.logger:
+        wandb.init(group="test")
 
     log.info(f"Instantiating trainer <{cfg.trainer._target_}>")
     trainer: Trainer = hydra.utils.instantiate(
         cfg.trainer,
+        callbacks=callbacks,
+        logger=logger,
+    )
+
+    trainer = hydra.utils.instantiate(
+        cfg.trainer,
+        num_nodes=int(os.getenv("SLURM_JOB_NUM_NODES")),
+        devices=len(os.getenv("CUDA_VISIBLE_DEVICES").split(",")),
         callbacks=callbacks,
         logger=logger,
     )
@@ -168,7 +113,7 @@ def train(cfg: DictConfig) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         "callbacks": callbacks,
         "logger": logger,
         "trainer": trainer,
-        # "profiler": prof,
+        # "profiler": profiler,
     }
 
     if logger:
@@ -177,11 +122,8 @@ def train(cfg: DictConfig) -> Tuple[Dict[str, Any], Dict[str, Any]]:
 
     if cfg.get("train"):
         log.info("Starting training!")
-        start_time = time.time()
         # trainer.fit(model=model, datamodule=datamodule, ckpt_path=cfg.get("ckpt_path"))
         trainer.fit(model=model, datamodule=datamodule)
-        end_time = time.time()
-        print(f"Finished training in {end_time - start_time}s!!!!")
 
     train_metrics = trainer.callback_metrics
 
@@ -233,24 +175,24 @@ def main(cfg: DictConfig) -> Optional[float]:
 import sys, socket
 
 
-class HostnamePrefixStream:
-    def __init__(self, orig_stdout):
-        self.orig_stdout = orig_stdout
-        self.hostname = socket.gethostname()
+# class HostnamePrefixStream:
+#     def __init__(self, orig_stdout):
+#         self.orig_stdout = orig_stdout
+#         self.hostname = socket.gethostname()
 
-    def write(self, message):
-        lines = message.split("\n")
-        for line in lines:
-            if line.strip():  # To skip empty lines
-                self.orig_stdout.write(f"[{self.hostname}] {line}\n")
-        self.orig_stdout.flush()
+#     def write(self, message):
+#         lines = message.split("\n")
+#         for line in lines:
+#             if line.strip():  # To skip empty lines
+#                 self.orig_stdout.write(f"[{self.hostname}] {line}\n")
+#         self.orig_stdout.flush()
 
-    def flush(self):
-        self.orig_stdout.flush()
+#     def flush(self):
+#         self.orig_stdout.flush()
 
 
 if __name__ == "__main__":
     # Redirect sys.stdout to the custom stream
-    sys.stdout = HostnamePrefixStream(sys.stdout)
+    # sys.stdout = HostnamePrefixStream(sys.stdout)
     print("hello world")
     main()

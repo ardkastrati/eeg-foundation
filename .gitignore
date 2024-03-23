@@ -150,9 +150,13 @@ dmypy.json
 /logs
 /runs
 /temp
+/wandb
+
+/slurm
 
 # Runs
 index_path*.txt
+spg_paths*.txt
 
 # Lightning-Hydra-Template
 configs/local/default.yaml
@@ -162,3 +166,6 @@ configs/local/default.yaml
 
 # Aim logging
 .aim
+
+# Makefile
+Makefile

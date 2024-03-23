@@ -13,8 +13,6 @@ import sys
 
 import timm.optim.optim_factory as optim_factory
 
-from torch.profiler import profile, tensorboard_trace_handler
-
 # https://lightning.ai/docs/pytorch/stable/common/lightning_module.html#lightningmodule
 # A LightningModule organizes your PyTorch code into 6 sections:
 #  - Initialization (__init__ and setup()).
@@ -54,15 +52,7 @@ class MAEModule(LightningModule):
         self.epoch_start_time = 0
         self.learning_rate = learning_rate
         self.mask_ratio = mask_ratio
-
-        # print("model's state dict:")
-
-        # # Attempt to serialize the state dict
-        # try:
-        #     torch.save(self.state_dict, "temp_state_dict.pt")
-        #     print("State dict is serializable!")
-        # except Exception as e:
-        #     print(f"Serialization failed: {e}")
+        self.epoch_train_times = []
 
     def forward(self, x):
         """ """
@@ -77,10 +67,11 @@ class MAEModule(LightningModule):
         loss = self.forward(batch)
 
         # log the loss on each training step
-        # self.log("train_loss", loss.item(), on_step=True)
-        # print("logging loss to wandb")
-        # self.log({"train_loss": loss.item()})
+        # wandb.log(
+        #     {"train_loss": loss.item(), "trainer/global_step": self.trainer.global_step}
+        # )
         self.log("train_loss", loss.item())
+        self.log("trainer/global_step", self.trainer.global_step)
 
         # step-wise update
         epoch = self.current_epoch
@@ -92,50 +83,10 @@ class MAEModule(LightningModule):
 
         return loss
 
-    def state_dict(self):
-        """Called when saving a checkpoint. Implement to generate and save the datamodule state.
-
-        :return: A dictionary containing the datamodule state that you want to save.
-        """
-        return {}
-
-    def on_train_epoch_end(self):
-        """
-        Callback that executes at the end of each training epoch to log the epoch duration
-        """
-        return
-        # end_time = time.time()
-        # state_dict = self.state_dict()
-
-        # print("epoch ended, now in on_train_epoch_end in mae_module")
-        # try:
-        #     torch.save(state_dict, "temp_state_dict.pt")
-        #     print("State dict is serializable!")
-        # except Exception as e:
-        #     print(f"Serialization failed: {e}")
-
-        # for key, value in state_dict.items():
-        #     try:
-        #         # Try to serialize each component
-        #         pickle.dumps(value)
-        #     except Exception as e:
-        #         # If an error occurs, print the key of the non-serializable component
-        #         print(f"Non-serializable item found: {key} -> {e}")
-
-        # try:
-        #     pickle.dumps(state_dict)
-        # except Exception as e:
-        #     print(f"Failed to serialize the entire state_dict: {e}")
-
-        # print("Finished finding goofy items")
-        # log to wandb directly
-        # self.log("Time per Epoch", end_time - self.epoch_start_time)
-        # self.epoch_start_time = time.time()
-
     def validation_step(self, batch, batch_idx):
         """"""
         loss = self.forward(batch)
-        # self.log("val_loss", loss.item(), on_epoch=True)
+        self.log("val_loss", loss.item(), on_epoch=True)
         epoch = self.current_epoch
         step = self.trainer.global_step
         # plot the inputs and outputs of the model every xyz epochs/batches

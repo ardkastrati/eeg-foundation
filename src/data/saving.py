@@ -9,7 +9,7 @@ import numpy as np
 import tempfile
 import os
 import time
-import socket
+from socket import gethostname
 
 
 def load_and_save_spgs(
@@ -86,9 +86,7 @@ def load_and_save_spgs(
     with open(index_path, "w") as file:
         json.dump(data_index, file)
 
-    with open(
-        os.path.join(TMPDIR, f"index_path{socket.gethostname()}.txt"), "w"
-    ) as file:
+    with open(os.path.join(TMPDIR, f"index_path_{gethostname()}.txt"), "w") as file:
         file.write(index_path)
 
     return data_index, parent, subdir

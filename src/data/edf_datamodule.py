@@ -1,6 +1,8 @@
 import torch
 import os
 import json
+
+import wandb
 import src.data.edf_loader_torch as custom_data
 from collections.abc import Sequence
 import psutil
@@ -15,7 +17,8 @@ import tracemalloc
 import src.data.saving as save
 import tempfile
 import os
-import socket
+from socket import gethostname
+import time
 
 
 class SimpleDataset(Dataset):
@@ -34,8 +37,6 @@ class SimpleDataset(Dataset):
 
 
 # https://lightning.ai/docs/pytorch/stable/data/datamodule.html#lightningdatamodule
-
-
 class EDFDataModule(LightningDataModule):
     def __init__(
         self,
@@ -75,12 +76,14 @@ class EDFDataModule(LightningDataModule):
 
         super().__init__()
         self.TMPDIR = TMPDIR
+        self.STORDIR = STORDIR  # Build index for pathnames to the EEG data
         self.stor_mode = stor_mode
         self.data_dir = data_dir
         self.batch_size = batch_size
         self.num_workers = num_workers
         self.save_hyperparameters(logger=False)
         self.train_val_split = train_val_split
+        self.hostname = gethostname()
 
         # Specifics on how to load the spectrograms
         self.window_size = window_size
@@ -95,13 +98,16 @@ class EDFDataModule(LightningDataModule):
         self.file_index = []
         self.target_size = target_size
 
-        self.STORDIR = STORDIR  # Build index for pathnames to the EEG data
-        self.build_channel_index(
-            min_duration=self.min_duration,
-            max_duration=self.max_duration,
-            select_ref=self.select_ref,
-            select_sr=self.select_sr,
-        )
+        # If set to True will call prepare_data() on LOCAL_RANK=0 for every node. If set to False will only call from NODE_RANK=0, LOCAL_RANK=0.
+        # We want it to be true because we want to load the spectrograms into memory on every node.
+        self.prepare_data_per_node = True
+
+        # self.build_channel_index(
+        #     min_duration=self.min_duration,
+        #     max_duration=self.max_duration,
+        #     select_ref=self.select_ref,
+        #     select_sr=self.select_sr,
+        # )
 
     def build_channel_index(
         self, min_duration=0, max_duration=1200, select_sr=[256], select_ref=["AR"]
@@ -154,7 +160,12 @@ class EDFDataModule(LightningDataModule):
         About: this method is called once & automatically at the beginning of the training process, before anything else.
         It is used to perform any data downloading or preprocessing tasks that are independent of the cross-validation folds or the distributed setup.
         """
-        print("preparing data")
+        print(f"Preparing data on {gethostname()}")
+        print("RAM memory % used:", psutil.virtual_memory()[2])
+        print("RAM Used (GB):", psutil.virtual_memory()[3] / 1000000000)
+        print("RAM Total (GB):", psutil.virtual_memory()[0] / 1000000000)
+
+        start_time = time.time()
 
         # build an index, you can select which files you want to include with parameters.
         raw_paths = self.build_channel_index(
@@ -170,45 +181,54 @@ class EDFDataModule(LightningDataModule):
             raw_paths=raw_paths, STORDIR=self.STORDIR, TMPDIR=self.TMPDIR
         )
 
-        print(self.spg_paths)
-        print("parent:", self.parent)
-        print("self.subdir", self.subdir)
+        end_time = time.time()
+        # wandb.log(
+        #     {
+        #         "data_preparation_time": end_time - start_time,
+        #         "hostname": self.hostname,
+        #         "rank": int(os.environ['SLURM_PROCID'])),
+        #     }
+        # )
+        data_preparation_time = end_time - start_time
+        print(f"data_preparation_time: {data_preparation_time}")
+        # self.log("data_preparation_time", end_time - start_time)
+        # self.log("hostname", int(gethostname()[-2:]))
+        # self.log("rank", int(os.environ["SLURM_PROCID"]))
 
+        # For debugging write paths into a file:
+        # filename = f"spg_paths_{self.hostname}.txt"
+
+        # # Open the file in write mode
+        # with open(filename, "w") as f:
+        #     f.write(f"self.parent: {self.parent}\n")
+        #     f.write(f"self.subdir: {self.subdir}\n")
+        #     # Loop through each item in the list and write it to the file
+        #     for key, path in self.spg_paths.items():
+        #         f.write(f"{key}: {path}\n")
+
+        # print(self.spg_paths)
+        # print("parent:", self.parent)
+        # print("self.subdir", self.subdir)
+
+    # See https://lightning.ai/docs/pytorch/stable/data/datamodule.html#setup
     def setup(self, stage=None) -> None:
         """
         This method is called after prepare_data, but before train_dataloader, val_dataloader, and test_dataloader.
         It is used to perform any dataset-specific setup that depends on the cross-validation folds or the distributed setup.
         """
 
-        print("before dataset creation")
-        print("RAM memory % used:", psutil.virtual_memory()[2])
-        print("RAM Used (GB):", psutil.virtual_memory()[3] / 1000000000)
+        print("Before dataset creation")
 
-        # entire_dataset = CacheDataset(self.cache, num_workers=self.num_workers)
-        """
-        if self.stor_mode == "LOAD" :
-            entire_dataset = custom_data.EDFDataset(
-                self.data_dir,
-                target_size=self.target_size,
-                window_size=self.window_size,
-                window_shift=self.window_shift,
-                min_duration=self.min_duration,
-                select_sr = self.select_sr,
-                select_ref = self.select_ref,
-                interpolate_250to256 = self.interpolate_250to256
-                )
-        
-        """
         # access the index in the tmpdir, so each process has it.
-        file_path = os.path.join(self.TMPDIR, f"index_path{socket.gethostname()}.txt")
-        print(file_path)
-        full_file_path = os.path.abspath(file_path)
-        print(full_file_path)
+        file_path = os.path.join(self.TMPDIR, f"index_path_{gethostname()}.txt")
+        # print(file_path)
+        # full_file_path = os.path.abspath(file_path)
+        # print(full_file_path)
 
         with open(file_path, "r") as file:
             index_path = file.read()
 
-        print(index_path)
+        # print(index_path)
         # load the index and change the keys back to integers, since they get converted to strings on saving.
         with open(index_path, "r") as file:
             paths = json.load(file)
@@ -220,6 +240,7 @@ class EDFDataModule(LightningDataModule):
         val_size = len(entire_dataset) - train_size
 
         print("TRAINSIZE IS:::::::::::::::::::::", train_size)
+        print("VALNSIZE IS:::::::::::::::::::::", val_size)
 
         # Instantiate datasets for training and validation
         self.train_dataset, self.val_dataset = torch.utils.data.random_split(
@@ -227,10 +248,9 @@ class EDFDataModule(LightningDataModule):
         )
 
     def train_dataloader(self):
-
         return DataLoader(
             self.train_dataset,
-            shuffle=True,
+            shuffle=True,  # apparently, it is not advised to set shuffle=True because Lightning will do it for us in distributed setting, TODO: look into it later
             batch_size=self.batch_size,
             num_workers=self.num_workers,
         )

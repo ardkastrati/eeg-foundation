@@ -27,7 +27,7 @@ test-full: ## Run all tests
 	pytest
 
 train: ## Train the model
-	python src/train.py
+	python src/train.py experiment=maxim.yaml
 
 trainexp:
 	python src/train.py experiment=maxim.yaml
@@ -39,7 +39,7 @@ cpu:
 	srun --time 60 --gres=gpu:0 --mem=100G --pty bash -i
 
 gpus: ## connect to GPU server cluster
-	srun --time $(T) --gres=gpu:1 --pty bash -i
+	srun --time 1:00:00 --gres=gpu:3 --mem=300G --pty bash -i
 
 gpuserver-60: ## connect to GPU server cluster
 	srun --time 60 --gres=gpu:1 --pty bash -i
@@ -63,7 +63,7 @@ nb:
 	jupyter lab --no-browser --port=8888
 
 time:
-	squeue -u maxihuber
+	squeue -u maxihuber -o "%.18i %.9P %.8j %.8u %.2t %.10M %.10l %.6D %R"
 
 free:
 	alias smon_free="grep --color=always --extended-regexp 'free|$' /home/sladmitet/smon.txt"
@@ -90,12 +90,11 @@ mvtraces:
 visualize:
 	python src/utils/visualization_pipeline.py
 
-# sbatchwith_shfile:
-# 	chmod +x /home/maxihuber/eeg-foundation/train.sh
-# 	/home/maxihuber/eeg-foundation/train.sh
-
 sbatch:
-	sbatch /home/maxihuber/eeg-foundation/train.slurm
+	sbatch /home/maxihuber/eeg-foundation/slurm/train.slurm
+
+overnight:
+	sbatch /home/maxihuber/eeg-foundation/slurm/overnight.slurm
 
 output:
 	tail -f /home/maxihuber/eeg-foundation/runs/sbatch/train_$(ID).out

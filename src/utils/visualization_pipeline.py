@@ -16,21 +16,24 @@ from mergetraces import merge_trace_files
 from symlinks import make_sym_dir, make_symlinks
 
 log_base = "/itet-stor/maxihuber/net_scratch/profiling/profileroutput"
-log_folder = "2024-03-16_19-40"
 sym_base = "/home/maxihuber/eeg-foundation/temp"
-sym_folder = f"symlinks_{log_folder}"
 
+log_folders = ["2024-03-23_15-19", "2024-03-23_15-36"]
 epochs = [0, 1, 5, 6, 7, 8, 9, 10, 15, 20, 25, 30]
 
-for epoch in epochs:
-    epoch_dir = make_epoch_dir(log_base=log_base, log_folder=log_folder, epoch=epoch)
-    move_by_epoch(log_base=log_base, log_folder=log_folder, epoch=epoch)
+for log_folder in log_folders:
+    for epoch in [0, 1, 5]:
+        epoch_dir = make_epoch_dir(
+            log_base=log_base, log_folder=log_folder, epoch=epoch
+        )
+        move_by_epoch(log_base=log_base, log_folder=log_folder, epoch=epoch)
 
-    compress_epoch(log_base=log_base, log_folder=log_folder, epoch=epoch)
+        compress_epoch(log_base=log_base, log_folder=log_folder, epoch=epoch)
 
-    merge_trace_files(epoch_dir=epoch_dir, epoch=epoch)
+        merge_trace_files(epoch_dir=epoch_dir, epoch=epoch)
 
-    sym_dir = make_sym_dir(sym_base=sym_base, sym_folder=sym_folder)
-    make_symlinks(epoch_dir=epoch_dir, epoch=epoch, sym_dir=sym_dir)
+        sym_folder = f"symlinks_{log_folder}"
+        sym_dir = make_sym_dir(sym_base=sym_base, sym_folder=sym_folder)
+        make_symlinks(epoch_dir=epoch_dir, epoch=epoch, sym_dir=sym_dir)
 
-    print(f"Finished the pipeline for epoch {epoch}")
+        print(f"Finished the pipeline for epoch {epoch}")
