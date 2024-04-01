@@ -82,7 +82,7 @@ merge:
 	python src/utils/mergetraces.py
 
 symlinks:
-	python src/utils/symlinks.py
+	srun python src/utils/symlinks.py
 
 mvtraces:
 	python src/utils/movetraces.py
@@ -90,11 +90,20 @@ mvtraces:
 visualize:
 	python src/utils/visualization_pipeline.py
 
+tmp:
+	sbatch /home/maxihuber/eeg-foundation/slurm/tmp.slurm
+
 sbatch:
 	sbatch /home/maxihuber/eeg-foundation/slurm/train.slurm
 
 overnight:
 	sbatch /home/maxihuber/eeg-foundation/slurm/overnight.slurm
+
+scraper:
+	sbatch /home/maxihuber/eeg-foundation/slurm/scraper.slurm
+
+arraytrain:
+	sbatch /home/maxihuber/eeg-foundation/slurm/arraytrain.slurm
 
 output:
 	tail -f /home/maxihuber/eeg-foundation/runs/sbatch/train_$(ID).out

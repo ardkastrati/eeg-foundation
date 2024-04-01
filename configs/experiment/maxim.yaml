@@ -4,43 +4,48 @@ defaults:
   - override /data: mae_test # default data config file to use is mae_test
   - override /model: mae_small # default model config file to use is mae_test
   - override /callbacks: null
-  - override /logger: null
+  - override /logger: wandb
   - override /debug: profiler_test
 
 # configures the training loop
 trainer:
   accelerator: gpu
   strategy: ddp
-  min_epochs: 1 # was 50
-  max_epochs: 31 # was 55
+  min_epochs: 1
+  max_epochs: 1
   sync_batchnorm: True
-  # num_nodes: 2
-  # devices: 3
+  # log_every_n_steps: 20
+  # num_nodes: 2 # now handled automatically inside train.py with environment variable
+  # devices: 3 # now handled automatically inside train.py with environment variable
 
 # specifies how data should be handled during training
 data:
   data_dir: "/home/maxihuber/eeg-foundation/src/data/000_json"
   batch_size: 8
+  num_workers : 1
+  pin_memory: True # was not set before (i.e. defaulted to False)
+  prefetch_factor: null
   window_size: 2.0 # window for processing data (in seconds)
-  window_shift: 0.125 # amount to shift the window for each data sample (in seconds)c
+  window_shift: 0.125 # amount to shift the window for each data sample (in seconds)
   min_duration: 326 # minimum duration of the EDF recording (in seconds)
   select_sr: [250, 256] # sample rates to select
   select_ref: ['AR'] # references to select
-  num_workers : 4 # was 8 before, but got warning that 1 is preferred
   target_size : [64, 2048]
   stor_mode: "LOAD"
+  runs_dir: /itet-stor/maxihuber/net_scratch/runs
 
 # configures the model and its training parameters
 model:
-  img_log_frq : 5000 # frequency of logging images (every img_log_frq iterations)
-  mask_ratio : 0.15 # masking ratio for embedded patches  (was 0.15)
+  img_log_frq: 100 # frequency of logging images (every img_log_frq iterations)
+  mask_ratio: 0.15 # masking ratio for embedded patches  (was 0.15)
   net:
-    img_size  : [64, 2048]
-    norm_pix_loss : False
+    img_size: [64, 2048]
+    norm_pix_loss: False
   optimizer:
     lr: 0.0002 # learning rate
+  max_epochs: null # set to null to use the trainer's max_epochs in train.py
 
 test: False
 
 # metadata for this experiment run
-tags: ["multi-node"]
+tags: ["trying-to-make-efficient"]

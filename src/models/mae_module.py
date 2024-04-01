@@ -12,10 +12,11 @@ import time
 import sys
 
 import timm.optim.optim_factory as optim_factory
+from socket import gethostname
 
 # https://lightning.ai/docs/pytorch/stable/common/lightning_module.html#lightningmodule
 # A LightningModule organizes your PyTorch code into 6 sections:
-#  - Initialization (__init__ and setup()).
+#  - Initialization (__init__ and setup())
 #  - Train Loop (training_step())
 #  - Validation Loop (validation_step())
 #  - Test Loop (test_step())
@@ -25,7 +26,7 @@ import timm.optim.optim_factory as optim_factory
 
 class MAEModule(LightningModule):
     """
-    Organizing structure that facilitates the training process
+    Organizing structure that facilitates the training process.
     """
 
     def __init__(
@@ -37,6 +38,7 @@ class MAEModule(LightningModule):
         img_log_frq: 1000,
         learning_rate=0.0002,
         mask_ratio=0.5,
+        max_epochs=None,
     ) -> None:
 
         # Initialize attributes
@@ -49,55 +51,103 @@ class MAEModule(LightningModule):
         self.save_hyperparameters(logger=False, ignore=["net"])
         self.img_log_frq = img_log_frq
         self.net = net
-        self.epoch_start_time = 0
         self.learning_rate = learning_rate
         self.mask_ratio = mask_ratio
-        self.epoch_train_times = []
+        self.hostname = gethostname()
+        self.max_epochs = max_epochs
+
+        # Initialize metrics logging datastructures
+        self.epoch_train_times = [[] for _ in range(self.max_epochs)]
+        self.epoch_train_throughputs = [[] for _ in range(self.max_epochs)]
+        self.train_losses = [[] for _ in range(self.max_epochs)]
+        self.val_losses = [[] for _ in range(self.max_epochs)]
+        self.vis_train_plots = [[] for _ in range(self.max_epochs)]
+        self.vis_val_plots = [[] for _ in range(self.max_epochs)]
 
     def forward(self, x):
-        """ """
-        # executes a forward pass of the neural network,
-        # i.e. MaskedAutoencoderViT.forward(x) in our case
+        """
+        Executes a forward pass of the neural network.
+
+        Args:
+            x: Input tensor.
+
+        Returns:
+            loss: The calculated loss.
+        """
         loss, _, mask, _ = self.net(x, mask_ratio=self.mask_ratio)
         return loss
 
     def training_step(self, batch, batch_idx):
         """ """
 
+        # Forward pass of the model
         loss = self.forward(batch)
 
-        # log the loss on each training step
-        # wandb.log(
-        #     {"train_loss": loss.item(), "trainer/global_step": self.trainer.global_step}
-        # )
-        self.log("train_loss", loss.item())
-        self.log("trainer/global_step", self.trainer.global_step)
-
-        # step-wise update
+        # Logging
         epoch = self.current_epoch
         step = self.trainer.global_step
+        # self.train_losses[epoch].append((step, epoch, batch_idx, loss.detach()))
+        if step % 10 == 0:
+            wandb.log(
+                {"train_loss": loss.detach()},
+                step=self.trainer.global_step,
+            )
+
+        if step % 200 == 0:
+            self.visualize_plots(batch, local_tag=epoch, log_tag="train")
+        # self.log("train_loss", loss, on_step=True, on_epoch=True)
 
         # plot the inputs and outputs of the model every xyz epochs/batches
-        if step % self.img_log_frq == 0:
-            self.visualize_plots(batch, local_tag=epoch, log_tag="train")
+        #     self.visualize_plots(batch, local_tag=epoch, log_tag="train")
 
         return loss
 
     def validation_step(self, batch, batch_idx):
-        """"""
+        """
+        Performs a validation step for the model.
+
+        Args:
+            batch: The input batch for validation.
+            batch_idx: The index of the current batch.
+
+        Returns:
+            The loss value for the validation step.
+        """
         loss = self.forward(batch)
-        self.log("val_loss", loss.item(), on_epoch=True)
+
         epoch = self.current_epoch
         step = self.trainer.global_step
-        # plot the inputs and outputs of the model every xyz epochs/batches
-        scaled_frq = self.img_log_frq * 0.5
-        if step % scaled_frq == 0:
+        # self.val_losses[epoch].append((step, epoch, batch_idx, loss.detach()))
+        # wandb.log(
+        #     {"val_loss": loss.detach()},
+        #     step=self.trainer.global_step,
+        # )
+        # self.log("val_loss", loss, on_step=True, on_epoch=True)
+        if step % 0.5 * 10 == 0:
+            wandb.log(
+                {"val_loss": loss.detach()},
+                step=self.trainer.global_step,
+            )
+
+        if step % 0.5 * 200 == 0:
             self.visualize_plots(batch, local_tag=epoch, log_tag="val")
+
+        # self.log("val_loss", loss.item(), on_epoch=True)
+        # plot the inputs and outputs of the model every xyz epochs/batches
+        # scaled_frq = self.img_log_frq * 0.5
+        # if step % scaled_frq == 0:
+        #     self.visualize_plots(batch, local_tag=epoch, log_tag="val")
 
     def test_step(self, batch, batch_idx):
         pass
 
     def configure_optimizers(self):
+        """
+        Configures the optimizer for the model.
+
+        Returns:
+            optimizer (torch.optim.Optimizer): The configured optimizer.
+        """
         param_groups = optim_factory.add_weight_decay(self.net, 0.0001)
         optimizer = torch.optim.AdamW(param_groups, lr=0.0002, betas=(0.9, 0.95))
         return optimizer
@@ -111,12 +161,31 @@ class MAEModule(LightningModule):
         plt.pcolormesh(image, shading="auto", cmap="viridis")
         plt.ylabel("Frequency Bins")
         plt.xlabel("steps")
-        plt.title("Spectrogram")
+        plt.title(f"Spectrogram: {log_tag}")
         plt.colorbar(label="")
 
+        # fig, ax = (
+        #     plt.subplots()
+        # )  # Use plt.subplots() to create new figure and axes objects
+        # c = ax.pcolormesh(image, shading="auto", cmap="viridis")
+        # ax.set_ylabel("Frequency Bins")
+        # ax.set_xlabel("Steps")
+        # ax.set_title("Spectrogram")
+        # fig.colorbar(c, ax=ax, label="")
+
         if save_log:
-            self.logger.experiment.log({log_tag: [wandb.Image(plt)]})
+            # self.logger.experiment.log({log_tag: [wandb.Image(plt)]})
+            wandb.log(
+                {log_tag: [wandb.Image(plt)]},
+                step=self.trainer.global_step,
+            )
         plt.clf()
+        # self.vis_train_plots[self.current_epoch].append(
+        #     {
+        #         "data": {log_tag: [wandb.Image(plt)]},
+        #         "epoch": self.trainer.current_epoch,
+        #     }
+        # )
 
     def visualize_plots(self, batch, local_tag, log_tag):
 
@@ -128,10 +197,10 @@ class MAEModule(LightningModule):
             val_image2 = val_image2.cpu()
             val_image2 = val_image2.numpy()
 
-            save_log = False
-            if self.logger is not None:
-                # print("using WANDB logger!")
-                save_log = True
+            save_log = True
+            # if self.logger is not None:
+            #     # print("using WANDB logger!")
+            #     save_log = True
 
             self.plot_and_save(
                 f"in_spectrogram{local_tag}",

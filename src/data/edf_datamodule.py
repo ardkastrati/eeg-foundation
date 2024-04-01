@@ -67,6 +67,8 @@ class EDFDataModule(LightningDataModule):
             2048,
         ],  # target size of the data after processing, in [channels, samples] (?)
         stor_mode="NONE",  # ?
+        prefetch_factor: int = None,
+        runs_dir: str = None,
     ) -> None:
 
         # Initialize attributes
@@ -75,10 +77,15 @@ class EDFDataModule(LightningDataModule):
         # print("data dir: ", data_dir)
 
         super().__init__()
-        self.TMPDIR = TMPDIR
+
+        self.run_dir = f"{runs_dir}/{os.environ['SLURM_JOBID']}"
+        self.TMPDIR = f"{self.run_dir}/tmp"
+        os.makedirs(self.TMPDIR, exist_ok=True)
+
         self.STORDIR = STORDIR  # Build index for pathnames to the EEG data
         self.stor_mode = stor_mode
         self.data_dir = data_dir
+        self.pin_memory = pin_memory
         self.batch_size = batch_size
         self.num_workers = num_workers
         self.save_hyperparameters(logger=False)
@@ -97,17 +104,11 @@ class EDFDataModule(LightningDataModule):
         self.index = []
         self.file_index = []
         self.target_size = target_size
+        self.prefetch_factor = prefetch_factor
 
         # If set to True will call prepare_data() on LOCAL_RANK=0 for every node. If set to False will only call from NODE_RANK=0, LOCAL_RANK=0.
         # We want it to be true because we want to load the spectrograms into memory on every node.
         self.prepare_data_per_node = True
-
-        # self.build_channel_index(
-        #     min_duration=self.min_duration,
-        #     max_duration=self.max_duration,
-        #     select_ref=self.select_ref,
-        #     select_sr=self.select_sr,
-        # )
 
     def build_channel_index(
         self, min_duration=0, max_duration=1200, select_sr=[256], select_ref=["AR"]
@@ -153,14 +154,19 @@ class EDFDataModule(LightningDataModule):
     # See https://lightning.ai/docs/pytorch/stable/data/datamodule.html#prepare-data
     def prepare_data(self) -> None:
         """
-        ATTENTION: When using multiple GPU to train, needs the newest lightning dev-build. There is a barrier for all processes here, and in stable release lightning,
-        it will timeout after 30 min, which is usually not enough to store all the spectrograms.
-        Here you can store data on the local machine.
+        This method is called by the node with LOCAL_RANK=0 once, before the training process starts.
+        It is used to perform any data downloading or preprocessing tasks that are independent of the
+        cross-validation folds or the distributed setup.
 
-        About: this method is called once & automatically at the beginning of the training process, before anything else.
-        It is used to perform any data downloading or preprocessing tasks that are independent of the cross-validation folds or the distributed setup.
+        The current implementation loads all data into node local memory.
+
+        With LightningDataModule.prepare_data_per_node=True, this method is executed on every node with LOCAL_RANK=0.
+
+        ATTENTION: When using multiple GPU to train, needs the newest lightning dev-build (2.3.0.dev).
+        There is a barrier for all processes here, and in stable release lightning,
+        it will timeout after 30 min, which is usually not enough to store all the spectrograms.
         """
-        print(f"Preparing data on {gethostname()}")
+        print(f"Preparing data on {self.hostname}")
         print("RAM memory % used:", psutil.virtual_memory()[2])
         print("RAM Used (GB):", psutil.virtual_memory()[3] / 1000000000)
         print("RAM Total (GB):", psutil.virtual_memory()[0] / 1000000000)
@@ -178,57 +184,46 @@ class EDFDataModule(LightningDataModule):
         # save the spectrograms. note that these attributes are not shared by the processes on other GPUs, that's why an index is saved in the /tmp directory.
         # Also returning the temporary directory objects, so that they don't close themselfes. Can close them in the teardown section (for example at beginning of the testing loop)
         self.spg_paths, self.parent, self.subdir = save.load_and_save_spgs(
-            raw_paths=raw_paths, STORDIR=self.STORDIR, TMPDIR=self.TMPDIR
+            raw_paths=raw_paths,
+            STORDIR=self.STORDIR,
+            TMPDIR=self.TMPDIR,
+            hostname=self.hostname,
         )
 
         end_time = time.time()
-        # wandb.log(
-        #     {
-        #         "data_preparation_time": end_time - start_time,
-        #         "hostname": self.hostname,
-        #         "rank": int(os.environ['SLURM_PROCID'])),
-        #     }
-        # )
-        data_preparation_time = end_time - start_time
-        print(f"data_preparation_time: {data_preparation_time}")
-        # self.log("data_preparation_time", end_time - start_time)
-        # self.log("hostname", int(gethostname()[-2:]))
-        # self.log("rank", int(os.environ["SLURM_PROCID"]))
 
-        # For debugging write paths into a file:
-        # filename = f"spg_paths_{self.hostname}.txt"
+        # Logging
+        self.data_preparation_time = end_time - start_time
+        with open(
+            f"{self.run_dir}/metrics/data_preparation_time_{os.environ['SLURM_PROCID']}_{self.hostname}.txt",
+            "w",
+        ) as file:
+            file.write(str(self.data_preparation_time))
 
-        # # Open the file in write mode
-        # with open(filename, "w") as f:
-        #     f.write(f"self.parent: {self.parent}\n")
-        #     f.write(f"self.subdir: {self.subdir}\n")
-        #     # Loop through each item in the list and write it to the file
-        #     for key, path in self.spg_paths.items():
-        #         f.write(f"{key}: {path}\n")
+        wandb.log({"data_preparation_time": self.data_preparation_time}, step=0)
 
-        # print(self.spg_paths)
-        # print("parent:", self.parent)
-        # print("self.subdir", self.subdir)
+        print(f"Prepared data on {self.hostname}")
+        print("RAM memory % used:", psutil.virtual_memory()[2])
+        print("RAM Used (GB):", psutil.virtual_memory()[3] / 1000000000)
+        print("RAM Total (GB):", psutil.virtual_memory()[0] / 1000000000)
 
     # See https://lightning.ai/docs/pytorch/stable/data/datamodule.html#setup
     def setup(self, stage=None) -> None:
         """
         This method is called after prepare_data, but before train_dataloader, val_dataloader, and test_dataloader.
         It is used to perform any dataset-specific setup that depends on the cross-validation folds or the distributed setup.
+
+        Every node will call this method and initialize the datasets.
         """
 
         print("Before dataset creation")
 
         # access the index in the tmpdir, so each process has it.
-        file_path = os.path.join(self.TMPDIR, f"index_path_{gethostname()}.txt")
-        # print(file_path)
-        # full_file_path = os.path.abspath(file_path)
-        # print(full_file_path)
+        file_path = os.path.join(self.TMPDIR, f"index_path_{self.hostname}.txt")
 
         with open(file_path, "r") as file:
             index_path = file.read()
 
-        # print(index_path)
         # load the index and change the keys back to integers, since they get converted to strings on saving.
         with open(index_path, "r") as file:
             paths = json.load(file)
@@ -240,7 +235,7 @@ class EDFDataModule(LightningDataModule):
         val_size = len(entire_dataset) - train_size
 
         print("TRAINSIZE IS:::::::::::::::::::::", train_size)
-        print("VALNSIZE IS:::::::::::::::::::::", val_size)
+        print("VALSIZE IS:::::::::::::::::::::::", val_size)
 
         # Instantiate datasets for training and validation
         self.train_dataset, self.val_dataset = torch.utils.data.random_split(
@@ -253,12 +248,17 @@ class EDFDataModule(LightningDataModule):
             shuffle=True,  # apparently, it is not advised to set shuffle=True because Lightning will do it for us in distributed setting, TODO: look into it later
             batch_size=self.batch_size,
             num_workers=self.num_workers,
+            pin_memory=self.pin_memory,
+            prefetch_factor=self.prefetch_factor,
         )
 
     def val_dataloader(self):
-
         return DataLoader(
-            self.val_dataset, batch_size=self.batch_size, num_workers=self.num_workers
+            self.val_dataset,
+            batch_size=self.batch_size,
+            num_workers=self.num_workers,
+            pin_memory=self.pin_memory,
+            prefetch_factor=self.prefetch_factor,
         )
 
     def test_dataloader(self):

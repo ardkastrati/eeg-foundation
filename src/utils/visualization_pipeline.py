@@ -16,13 +16,16 @@ from mergetraces import merge_trace_files
 from symlinks import make_sym_dir, make_symlinks
 
 log_base = "/itet-stor/maxihuber/net_scratch/profiling/profileroutput"
-sym_base = "/home/maxihuber/eeg-foundation/temp"
+sym_base = "/home/maxihuber/eeg-foundation/symlinks"
 
-log_folders = ["2024-03-23_15-19", "2024-03-23_15-36", "2024-03-23_16-02"]
+log_folders = ["2024-03-31_00-32"]
+
 epochs = [0, 1, 5, 6, 7, 8, 9, 10, 15, 20, 25, 30]
+short_epochs = [5]
 
 for log_folder in log_folders:
-    for epoch in epochs:
+    for epoch in short_epochs:
+        # for epoch in epochs:
         epoch_dir = make_epoch_dir(
             log_base=log_base, log_folder=log_folder, epoch=epoch
         )

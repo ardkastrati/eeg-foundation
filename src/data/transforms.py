@@ -60,6 +60,7 @@ class fft_256:
             hop_length=int(window_shift * 256),
             normalized=True,
         )
+        # TODO: is it necessary to send to device?
         if cuda:
             self.fft256 = self.fft256.to("cuda")
 

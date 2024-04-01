@@ -15,6 +15,7 @@ from torch.autograd import profiler
 
 import time, socket
 from datetime import datetime
+import sys, socket
 
 import wandb
 
@@ -45,6 +46,7 @@ from src.utils import (
     log_hyperparameters,
     task_wrapper,
     ProfilerCallback,
+    setup_wandb,
 )
 
 log = RankedLogger(__name__, rank_zero_only=True)
@@ -69,6 +71,7 @@ def train(cfg: DictConfig) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     datamodule: LightningDataModule = hydra.utils.instantiate(cfg.data)
 
     log.info(f"Instantiating model <{cfg.model._target_}>")
+    cfg.model.max_epochs = cfg.trainer.max_epochs
     model: LightningModule = hydra.utils.instantiate(cfg.model)
 
     log.info("Instantiating callbacks...")
@@ -77,33 +80,30 @@ def train(cfg: DictConfig) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     log.info(f"Instantiating profiling callbacks...")
     callbacks.append(
         ProfilerCallback(
+            runs_dir=cfg.paths.runs_dir,
             log_dir=cfg.debug.profile_dir,
             record_shapes=cfg.debug.record_shapes,
             with_stack=cfg.debug.with_stack,
             profile_memory=cfg.debug.profile_memory,
-            log_epoch_freq=5,
-            hostname=socket.gethostname(),
+            log_epoch_freq=cfg.debug.log_epoch_freq,
         )
     )
 
     log.info("Instantiating loggers...")
-    logger: List[Logger] = instantiate_loggers(cfg.get("logger"))
-    if logger in cfg and "wandb" in cfg.logger:
-        wandb.init(group="test")
+    # logger = hydra.utils.instantiate(
+    #     cfg.logger,
+    #     dir=f"{cfg.data.runs_dir}/{os.getenv('SLURM_JOB_ID')}",
+    #     # group=f"{os.getenv('SLURM_JOB_ID')}",
+    # )
+    setup_wandb(cfg)
 
     log.info(f"Instantiating trainer <{cfg.trainer._target_}>")
-    trainer: Trainer = hydra.utils.instantiate(
-        cfg.trainer,
-        callbacks=callbacks,
-        logger=logger,
-    )
-
     trainer = hydra.utils.instantiate(
         cfg.trainer,
         num_nodes=int(os.getenv("SLURM_JOB_NUM_NODES")),
         devices=len(os.getenv("CUDA_VISIBLE_DEVICES").split(",")),
         callbacks=callbacks,
-        logger=logger,
+        # logger=logger,
     )
 
     object_dict = {
@@ -111,14 +111,12 @@ def train(cfg: DictConfig) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         "datamodule": datamodule,
         "model": model,
         "callbacks": callbacks,
-        "logger": logger,
         "trainer": trainer,
-        # "profiler": profiler,
     }
 
-    if logger:
-        log.info("Logging hyperparameters!")
-        log_hyperparameters(object_dict)
+    # if logger:
+    #     log.info("Logging hyperparameters!")
+    #     log_hyperparameters(object_dict)
 
     if cfg.get("train"):
         log.info("Starting training!")
@@ -172,27 +170,5 @@ def main(cfg: DictConfig) -> Optional[float]:
     return metric_value
 
 
-import sys, socket
-
-
-# class HostnamePrefixStream:
-#     def __init__(self, orig_stdout):
-#         self.orig_stdout = orig_stdout
-#         self.hostname = socket.gethostname()
-
-#     def write(self, message):
-#         lines = message.split("\n")
-#         for line in lines:
-#             if line.strip():  # To skip empty lines
-#                 self.orig_stdout.write(f"[{self.hostname}] {line}\n")
-#         self.orig_stdout.flush()
-
-#     def flush(self):
-#         self.orig_stdout.flush()
-
-
 if __name__ == "__main__":
-    # Redirect sys.stdout to the custom stream
-    # sys.stdout = HostnamePrefixStream(sys.stdout)
-    print("hello world")
     main()

@@ -14,8 +14,9 @@ from socket import gethostname
 
 def load_and_save_spgs(
     raw_paths,
+    hostname,
     STORDIR="/scratch/mae",
-    TMPDIR="/tmp",
+    TMPDIR="tmp/",
     window_size=2.0,
     window_shift=0.125,
     target_size=(64, 2048),
@@ -39,7 +40,6 @@ def load_and_save_spgs(
     fft = fft_256(window_size=window_size, window_shift=window_shift, cuda=True)
     crop = crop_spectrogram(target_size=target_size)
 
-    # parent = tempfile.TemporaryDirectory(dir=STORDIR, delete=False)
     if not os.path.exists(STORDIR):
         os.makedirs(
             STORDIR
@@ -86,7 +86,7 @@ def load_and_save_spgs(
     with open(index_path, "w") as file:
         json.dump(data_index, file)
 
-    with open(os.path.join(TMPDIR, f"index_path_{gethostname()}.txt"), "w") as file:
+    with open(os.path.join(TMPDIR, f"index_path_{hostname}.txt"), "w") as file:
         file.write(index_path)
 
     return data_index, parent, subdir

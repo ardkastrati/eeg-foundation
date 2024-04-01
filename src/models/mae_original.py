@@ -477,6 +477,7 @@ class MaskedAutoencoderViT(nn.Module):
         mask = 1 - (1 - mask_t) * (1 - mask_f)  # N, T, F
 
         # get masked x
+        # TODO: study why the .to(device) call is necessary here and it if could be done differently
         id2res = torch.Tensor(list(range(N * T * F))).reshape(N, T, F).to(x.device)
         id2res = id2res + 999 * mask  # add a large value for masked elements
         id2res2 = torch.argsort(id2res.flatten(start_dim=1))
@@ -646,8 +647,11 @@ class MaskedAutoencoderViT(nn.Module):
         loss_recon = self.forward_loss(
             imgs, pred, mask, norm_pix_loss=self.norm_pix_loss
         )
-        # ??
-        loss_contrastive = torch.FloatTensor([0.0]).cuda()
+        # According to Pascal, this is an artefact from the VisionTransformer Architecture, but we're not using it rn!
+        # Each batch spent about 1/4th of its time moving this little tensor to the GPU due to the .cuda() call
+        # and in MAEModule.forward we never use it!!
+        # loss_contrastive = torch.FloatTensor([0.0]).cuda()
+        loss_contrastive = 0.0
 
         return loss_recon, pred, mask, loss_contrastive
 
