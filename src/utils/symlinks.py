@@ -9,25 +9,35 @@ def make_sym_dir(sym_base, sym_folder):
 
 
 def make_symlinks(epoch_dir, epoch, sym_dir):
-    merge_dir = os.path.join(epoch_dir, f"{epoch}_epoch_merged")
-    sym_link_path = os.path.join(sym_dir, f"{epoch}_epoch_merged")
-    os.symlink(merge_dir, sym_link_path)
-    print(f"Created symlink for {merge_dir}")
+    merge_dir = os.path.join(epoch_dir, f"noncompressed")
 
-    merged_files = glob.glob(os.path.join(merge_dir, "*"))
+    # take all files in merge_dir, create a folder in sym_dir/{epoch}_epoch/filename and symlink the file into it
+    for trace_file in os.listdir(merge_dir):
+        trace_path = os.path.join(merge_dir, trace_file)
+        sym_path = os.path.join(
+            sym_dir, f"{epoch}_epoch", f"{trace_file}_dir", trace_file
+        )
+        os.makedirs(os.path.dirname(sym_path), exist_ok=True)
+        os.symlink(trace_path, sym_path)
 
-    for file_path in merged_files:
-        # Extract the filename from the file_path
-        file_name = os.path.basename(file_path)
+    # print(f"Created symlink for {merge_dir}")
+    # sym_link_path = os.path.join(sym_dir, f"{epoch}_epoch_noncompressed")
+    # os.symlink(merge_dir, sym_link_path)
 
-        # Path for the symlink in the 'symlinks' directory
-        symlink_path = os.path.join(sym_dir, file_name)
+    # merged_files = glob.glob(os.path.join(merge_dir, "*"))
 
-        # Create a symlink for the file in the 'symlinks' directory
-        # Use os.path.relpath to create a relative path to the target
-        relative_target_path = os.path.relpath(file_path, sym_dir)
-        os.symlink(relative_target_path, symlink_path)
-        print(f"Created symlink for {file_name}")
+    # for file_path in merged_files:
+    #     # Extract the filename from the file_path
+    #     file_name = os.path.basename(file_path)
+
+    #     # Path for the symlink in the 'symlinks' directory
+    #     symlink_path = os.path.join(sym_dir, file_name)
+
+    #     # Create a symlink for the file in the 'symlinks' directory
+    #     # Use os.path.relpath to create a relative path to the target
+    #     relative_target_path = os.path.relpath(file_path, sym_dir)
+    #     os.symlink(relative_target_path, symlink_path)
+    #     print(f"Created symlink for {file_name}")
 
 
 def symlink_noncompressed(run_base, sym_dir):
@@ -48,7 +58,7 @@ def symlink_noncompressed(run_base, sym_dir):
 
 
 def linkintogooglecompressed(from_dir, to_dir):
-    # Write a method that takes methods in from_dir and symlinks them into to_dir (same structure, just symlinks to the actual folders)
+    # Write a method that takes traces in from_dir and symlinks them into to_dir (same structure, just symlinks to the actual folders)
     # e.g. from_dir=/home/maxihuber/eeg-foundation/googlesheetresults/2024-03-16_19-40 contains dirs like 0_epoch, 1_epoch and so on.
     # for each of these, create a directory in to_dir=/home/maxihuber/eeg-foundation/googlesheetresults/symlinks/2024-03-16_19-40/(0_epoch, 1_epoch, ...)
     # and then symlink (ln -s) the files in the original directory to the new directory
@@ -63,7 +73,7 @@ def linkintogooglecompressed(from_dir, to_dir):
 
 
 if __name__ == "__main__":
-    runs = ["2024-03-16_21-26"]
+    runs = ["2024-03-23_16-17"]
 
     # move into googlesheetresults
     for run in runs:

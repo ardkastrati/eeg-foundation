@@ -86,15 +86,18 @@ class MAEModule(LightningModule):
         # Logging
         epoch = self.current_epoch
         step = self.trainer.global_step
+
         # self.train_losses[epoch].append((step, epoch, batch_idx, loss.detach()))
-        if step % 10 == 0:
+        ############################
+        if step % 100 == 0:
             wandb.log(
                 {"train_loss": loss.detach()},
                 step=self.trainer.global_step,
             )
-
         if step % 200 == 0:
             self.visualize_plots(batch, local_tag=epoch, log_tag="train")
+        ############################
+
         # self.log("train_loss", loss, on_step=True, on_epoch=True)
 
         # plot the inputs and outputs of the model every xyz epochs/batches
@@ -123,15 +126,15 @@ class MAEModule(LightningModule):
         #     step=self.trainer.global_step,
         # )
         # self.log("val_loss", loss, on_step=True, on_epoch=True)
-        if step % 0.5 * 10 == 0:
+        ############################
+        if step % 50 == 0:
             wandb.log(
                 {"val_loss": loss.detach()},
                 step=self.trainer.global_step,
             )
-
-        if step % 0.5 * 200 == 0:
+        if step % 100 == 0:
             self.visualize_plots(batch, local_tag=epoch, log_tag="val")
-
+        ############################
         # self.log("val_loss", loss.item(), on_epoch=True)
         # plot the inputs and outputs of the model every xyz epochs/batches
         # scaled_frq = self.img_log_frq * 0.5

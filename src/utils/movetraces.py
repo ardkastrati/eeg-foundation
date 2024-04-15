@@ -8,11 +8,11 @@ def move_by_epoch(log_base, log_folder, epoch):
     For each file matching this epoch in `log_dir/log_folder`, acc. to this pattern f"{epoch}_{node_id}_{servername}.pt.trace.json", move it to this folder
     """
     noncompr_dir = os.path.join(log_base, log_folder, f"{epoch}_epoch", "noncompressed")
+    os.makedirs(noncompr_dir, exist_ok=True)
     epoch_filenames = glob.glob(
         os.path.join(log_base, log_folder, f"{epoch}_*_*.pt.trace.json")
     )
     for filename in epoch_filenames:
-        os.makedirs(noncompr_dir, exist_ok=True)
         shutil.move(filename, noncompr_dir)
 
 

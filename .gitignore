@@ -150,14 +150,13 @@ dmypy.json
 /logs
 /runs
 /temp
-/symlinks
+/symlinks/*
+/run_tmp
 /wandb
 /googlesheetresults
 
 # Checkpoints (WandB & Lightning)
 /eeg-foundation
-
-/slurm
 
 # Runs
 index_path*.txt

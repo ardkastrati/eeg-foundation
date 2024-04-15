@@ -1,3 +1,0 @@
-get it runnng
-get the stuff from pascal
-profile trainign / wandb, find bottlenecks

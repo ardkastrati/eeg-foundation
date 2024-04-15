@@ -26,41 +26,14 @@ test: ## Run not slow tests
 test-full: ## Run all tests
 	pytest
 
-train: ## Train the model
+train: ## Train the model (on local/calling node)
 	python src/train.py experiment=maxim.yaml
 
-trainexp:
-	python src/train.py experiment=maxim.yaml
+sbatch:
+	sbatch /home/maxihuber/eeg-foundation/slurm/train.slurm
 
-custom:
-	srun --time 2:00:00 --gres=gpu:8 --nodelist=tikgpu02 --mem=300G --pty bash -i
-
-cpu:
-	srun --time 60 --gres=gpu:0 --mem=100G --pty bash -i
-
-gpus: ## connect to GPU server cluster
-	srun --time 1:00:00 --gres=gpu:3 --mem=300G --pty bash -i
-
-gpuserver-60: ## connect to GPU server cluster
+gpuserver: ## connect to GPU server cluster
 	srun --time 60 --gres=gpu:1 --pty bash -i
-
-3gpu:
-	srun --time 60 --gres=gpu:$(N) --mem=$(MEM) --pty bash -i
-
-2node:
-	srun --time 60 --gres=gpu:2 --nodes=2 --mem=40G --pty bash -i
-
-serv:
-	srun --time 60 --gres=gpu:1 --nodelist=$(N) --pty bash -i
-
-10:
-	srun --time 60 --gres=gpu:1 --nodelist=tikgpu10 --pty bash -i
-
-logtb:
-	tensorboard --logdir="/home/maxihuber/eeg-foundation/profiler_output/profiler0"
-
-nb:
-	jupyter lab --no-browser --port=8888
 
 time:
 	squeue -u maxihuber -o "%.18i %.9P %.8j %.8u %.2t %.10M %.10l %.6D %R"
@@ -69,10 +42,37 @@ free:
 	alias smon_free="grep --color=always --extended-regexp 'free|$' /home/sladmitet/smon.txt"
 	smon
 
+visualize:
+	python src/utils/visualization_pipeline.py
+
+# custom:
+# 	srun --time 2:00:00 --gres=gpu:8 --nodelist=tikgpu02 --mem=300G --pty bash -i
+
+# cpu:
+# 	srun --time 60 --gres=gpu:0 --mem=10G --pty bash -i
+
+# gpus: ## connect to GPU server cluster
+# 	srun --time 1:00:00 --gres=gpu:3 --mem=300G --pty bash -i
+
+# 3gpu:
+# 	srun --time 60 --gres=gpu:$(N) --mem=$(MEM) --pty bash -i
+
+# 2node:
+# 	srun --time 60 --gres=gpu:2 --nodes=2 --mem=40G --pty bash -i
+
+# serv:
+# 	srun --time 60 --gres=gpu:1 --nodelist=$(N) --pty bash -i
+
+# 10:
+# 	srun --time 60 --gres=gpu:1 --nodelist=tikgpu10 --pty bash -i
+
+# nb:
+# 	jupyter lab --no-browser --port=8888
+
 duplicate:
 	srun --jobid=$(ID) --overlap --pty bash -i
 
-envinfo:
+envinfo: # Show environment info
 	python src/envinfo.py
 
 compress:
@@ -87,32 +87,23 @@ symlinks:
 mvtraces:
 	python src/utils/movetraces.py
 
-visualize:
-	python src/utils/visualization_pipeline.py
+# overnight:
+# 	sbatch /home/maxihuber/eeg-foundation/slurm/overnight.slurm
 
-tmp:
-	sbatch /home/maxihuber/eeg-foundation/slurm/tmp.slurm
+# scraper:
+# 	sbatch /home/maxihuber/eeg-foundation/slurm/scraper.slurm
 
-sbatch:
-	sbatch /home/maxihuber/eeg-foundation/slurm/train.slurm
+# arraytrain:
+# 	sbatch /home/maxihuber/eeg-foundation/slurm/arraytrain.slurm
 
-overnight:
-	sbatch /home/maxihuber/eeg-foundation/slurm/overnight.slurm
+# output:
+# 	tail -f /home/maxihuber/eeg-foundation/runs/sbatch/train_$(ID).out
 
-scraper:
-	sbatch /home/maxihuber/eeg-foundation/slurm/scraper.slurm
+# errout:
+# 	tail -f /home/maxihuber/eeg-foundation/runs/sbatch/train_$(ID).err
 
-arraytrain:
-	sbatch /home/maxihuber/eeg-foundation/slurm/arraytrain.slurm
-
-output:
-	tail -f /home/maxihuber/eeg-foundation/runs/sbatch/train_$(ID).out
-
-errout:
-	tail -f /home/maxihuber/eeg-foundation/runs/sbatch/train_$(ID).err
-
-monitor:
-	scontrol show job $(ID)
+# monitor:
+# 	scontrol show job $(ID)
 
 tboard:
 	tensorboard --logdir=$(FOLDER) --bind_all --port=$(PORT)

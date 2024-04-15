@@ -12,7 +12,7 @@ trainer:
   accelerator: gpu
   strategy: ddp
   min_epochs: 1
-  max_epochs: 1
+  max_epochs: 31
   sync_batchnorm: True
   # log_every_n_steps: 20
   # num_nodes: 2 # now handled automatically inside train.py with environment variable
@@ -21,7 +21,7 @@ trainer:
 # specifies how data should be handled during training
 data:
   data_dir: "/home/maxihuber/eeg-foundation/src/data/000_json"
-  batch_size: 8
+  batch_size: 32
   num_workers : 1
   pin_memory: True # was not set before (i.e. defaulted to False)
   prefetch_factor: null

@@ -15,8 +15,8 @@ job_type: "training" # job type of the run
 
 # Additional parameters
 # group: "${env.SLURM_JOB_ID}" # sub-organizational unit within the project
-mode: "online" # online or offline (i.e. upload to dashboard or not)
-offline: True # run offline without syncing to WandB servers
+mode: "offline" # online or offline (i.e. upload to dashboard or not)
+# offline: False # run offline without syncing to WandB servers
 id: null # pass correct id to resume experiment!
 log_model: False # upload lightning ckpts
 prefix: "" # a string to put at the beginning of metric keys, e.g. with "test_" you would get "test_loss" instead of "loss"

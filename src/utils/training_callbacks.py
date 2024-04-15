@@ -53,7 +53,8 @@ class ProfilerCallback(Callback):
         self.with_stack = with_stack
         self.profile_memory = profile_memory
         self.epoch_freq = log_epoch_freq
-        self.log_path = os.path.join(log_dir, datetime.now().strftime("%Y-%m-%d_%H-%M"))
+        # self.log_path = os.path.join(log_dir, datetime.now().strftime("%Y-%m-%d_%H-%M"))
+        self.log_path = os.path.join(log_dir, f"{os.getenv('SLURM_JOB_ID')}")
         os.makedirs(self.log_path, exist_ok=True)
         self.hostname = gethostname()
 
@@ -66,16 +67,16 @@ class ProfilerCallback(Callback):
         Returns:
             bool: True if the test should be profiled, False otherwise.
         """
-        return False
-        # if (
-        #     current_epoch < 20
-        #     # current_epoch < 2
-        #     # or (5 <= current_epoch and current_epoch < 10)
-        #     or current_epoch % self.epoch_freq == 0
-        # ):
-        #     return True
-        # else:
-        #     return False
+        # return False
+        if (
+            # current_epoch < 20
+            current_epoch < 2
+            or (5 <= current_epoch and current_epoch < 10)
+            or current_epoch % self.epoch_freq == 0
+        ):
+            return True
+        else:
+            return False
 
     def output_fn(self, profiler, worker_id, epoch):
         """
@@ -114,9 +115,7 @@ class ProfilerCallback(Callback):
 
         if self.profileTest(current_epoch=current_epoch):
             pl_module.profiler = torch.profiler.profile(
-                schedule=torch.profiler.schedule(
-                    wait=0, warmup=1, active=nr_batches - 1, repeat=1
-                ),
+                schedule=torch.profiler.schedule(wait=1, warmup=1, active=5, repeat=1),
                 on_trace_ready=lambda p: self.output_fn(
                     p, worker_id=trainer.global_rank, epoch=current_epoch
                 ),
@@ -212,9 +211,10 @@ class ProfilerCallback(Callback):
             (trainer.global_step, current_epoch, throughput)
         )
 
-        # wandb.log(
-        #     {"epoch": self.current_epoch}, commit=True
-        # )  # This commits the accumulated metrics
+        wandb.log(
+            {"epoch": current_epoch},
+            step=trainer.global_step,
+        )
 
     def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx):
         """
@@ -266,6 +266,10 @@ class ProfilerCallback(Callback):
         pl_module.total_train_time = (
             pl_module.train_end_time - pl_module.train_start_time
         )
+        wandb.log(
+            {"total_train_time": pl_module.total_train_time}, step=trainer.global_step
+        )
+
         print("Finished training. Now outputting performance metrics...")
 
         ########################################
