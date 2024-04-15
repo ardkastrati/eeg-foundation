@@ -45,6 +45,11 @@ free:
 visualize:
 	python src/utils/visualization_pipeline.py
 
+git:
+	eval "$(ssh-agent -s)"
+	ssh-add ~/.ssh/id_rsa
+	git status
+
 # custom:
 # 	srun --time 2:00:00 --gres=gpu:8 --nodelist=tikgpu02 --mem=300G --pty bash -i
 

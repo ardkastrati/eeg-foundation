@@ -28,7 +28,9 @@ sym_base = "/home/maxihuber/eeg-foundation/symlinks"
 # Add SLURM_JOB_IDs here
 log_folders = [
     "885008",
-    "885009",
+    "885011",
+    "885013",
+    "885018",
 ]
 
 epochs = [0, 1, 5, 6, 7, 8, 9, 10, 15, 20, 25, 30]

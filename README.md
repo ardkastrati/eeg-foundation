@@ -107,7 +107,7 @@ When prompted, click "Select another folder" and paste the absolute path to a fo
 
 You can't load all epochs at once as your local machine will most likely run out of memory.
 
-Make sure not to open too many tensorboard sessions, and periodically run `htop` to kill the running tensorboard processes once you're finished. They somehow still hang around even when closing the tensorboard tab.
+Make sure not to open too many tensorboard sessions, and periodically run `htop` to kill the running tensorboard processes once you're finished. You can filter by "tensorboard" and then kill all associated processes. I usually had to kill the first $n$ where $n = \text{Number of tensorboard sessions started}$. Just closing the tensorboard tabs is not enough.
 
 I am still figuring out how to run tensorboard on a compute node so this `htop` process killing is not necessary anymore.
 
