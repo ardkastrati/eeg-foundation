@@ -11,9 +11,9 @@ This document should serve as a brief outline of how the project works and is or
 
 ### Installing packages
 
-The necessary dependencies be found in the `fastenv.yml` file.
+The necessary dependencies can be found in the `fastenv.yml` file.
 
-Then, run `conda env create -f fastenv.yml` to install the environment on your machine (maybe adjust the last line of the file first to set the install location).
+Run `conda env create -f fastenv.yml` to install the environment on your machine (maybe adjust the last line in `fastenv.yml` to set the install location).
 
 Note: You might run into an error when installing the current dev-build (2.3.0.dev) of Lightning (the most recent version is necessary though). Install it manually using `pip install https://github.com/Lightning-AI/lightning/archive/refs/heads/master.zip -U`.
 
@@ -26,9 +26,7 @@ Look at the brief explanation at the top of the `TEMPLATE_README.md` file for gu
 
 ## Usage
 
-First, I will briefly describe how the project is built up. Everything can be found in more detail in the subsections below.
-
-The important parts of the project structure are:
+The important parts of the project structure are (more can be found in the subsections below):
 - configs/
 - src/: train script and subdirectories
 - src/data: LightningDataModule implementations (not used anymore), supporting methods for data loading and transformations (e.g. spectrogram saving)
@@ -47,7 +45,7 @@ The most important are:
 
 `sbatch`: submits the `slurm/train.slurm` script to the SLURM controller. The script then initiates the training. Set it up as you like.
 
-Note: these parameters need only be set in the slurm script and not in the configs or train scripts. I have taken care of that double declaration issue by pasting the slurm environment variables in the `train.py` script. Also, please note that `gres=gpu` needs to be equal to `ntasks-per-node`.
+Note: the following parameters need only be set in the slurm script and not in the configs or train scripts. I have taken care of that double declaration issue by pasting the slurm environment variables in the `train.py` script instead of manually inserting them. Also, please note that `--gres=gpu` needs to be equal to `--ntasks-per-node`.
 
 ```
 #SBATCH --nodes=1
@@ -65,7 +63,7 @@ Note: these parameters need only be set in the slurm script and not in the confi
 
 ### Configs
 
-The main config file that is used in the slurm script from the `make sbatch` command is `configs/experiment/maxim.yaml`.
+The main config file is `configs/experiment/maxim.yaml`. I passed it to my `srun` commands and it is also used in the slurm script submitted by the `make sbatch` command.
 
 It contains the default settings I have been working with and also links some other config files into it.
 
@@ -89,8 +87,7 @@ Currently, wandb is setup for `maximhuber` but you should be able to change it t
 
 ### PyTorch Profiler & Tensorboard
 
-I have implemented the profiling of the code in the `training_callbacks.py` file. As the name suggests, the profiler is handled through
-custom callback code.
+I have implemented the profiling of the code in the `src/utils/training_callbacks.py` file. As the name suggests, the profiling is handled through custom callback code.
 
 - If you want to turn the profiler off, you need to `return False` in the `ProfilerCallback.profileTest` method.
 - If you want to turn the profiler on, you can customize the situations in which the same method gives `return True`.
@@ -114,4 +111,4 @@ I am still figuring out how to run tensorboard on a compute node so this `htop` 
 
 ### Other
 
-Generally, there are a lot of files hanging around from Pascal's side. Some of them are important for finetuning, some are not. I have not removed them as they might be useful in the future.
+Generally, there are a lot of files hanging around from Pascal's side. Some of them are important for finetuning, some are not (especially configs). I have not removed them as they might be useful in the future.

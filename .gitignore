@@ -170,6 +170,3 @@ spg_paths*.txt
 
 # Aim logging
 .aim
-
-# Makefile
-Makefile
