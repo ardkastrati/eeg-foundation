@@ -13,7 +13,14 @@ This document should serve as a brief outline of how the project works and is or
 
 The necessary dependencies can be found in the `fastenv.yml` file.
 
-Run `conda env create -f fastenv.yml` to install the environment on your machine (maybe adjust the last line in `fastenv.yml` to set the install location).
+Run 
+
+```
+conda config --set channel_priority flexible
+conda env create -f fastenv.yml
+```
+
+to install the environment on your machine (maybe adjust the last line in `fastenv.yml` to set the install location).
 
 Note: You might run into an error when installing the current dev-build (2.3.0.dev) of Lightning (the most recent version is necessary though). Install it manually using `pip install https://github.com/Lightning-AI/lightning/archive/refs/heads/master.zip -U`.
 
