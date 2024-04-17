@@ -14,14 +14,14 @@ import matplotlib.pyplot as plt
 import torchaudio
 from torch.nn.functional import interpolate
 
-filename = "/itet-stor/schepasc/deepeye_storage/foundation/tueg/edf//000/aaaaaadj/s003_2004_05_13/02_tcp_le/aaaaaadj_s003_t001.edf"
-path_prefix = "/itet-stor/schepasc/deepeye_storage/foundation/tueg/edf"
+filename = "/itet-stor/maxihuber/deepeye_storage/foundation/tueg/edf//000/aaaaaadj/s003_2004_05_13/02_tcp_le/aaaaaadj_s003_t001.edf"
+path_prefix = "/itet-stor/maxihuber/deepeye_storage/foundation/tueg/edf"
 data = mne.io.read_raw_edf(filename)
-with open("/home/schepasc/eeg-foundation/src/data/000_json", 'r') as file:
+with open("/home/maxihuber/eeg-foundation/src/data/000_json", 'r') as file:
     edf_data =  json.load(file)
     
     print(len(edf_data))
-with open("/home/schepasc/tueg_json", 'r') as file:
+with open("/home/maxihuber/tueg_json", 'r') as file:
     whole_data = json.load(file)
 
 index = []

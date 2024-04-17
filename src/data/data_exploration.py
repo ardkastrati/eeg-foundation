@@ -29,7 +29,6 @@ with open("data_exploration.txt", 'w') as out_file:
     sum_of_channels = sum(len(f.get('channels' , [])) for f in longer_than_six)
     out_file.write(f"There are {sum_of_channels} EEG-Channels in files longer than 256 seconds, SR=256, AR\n")
 
-
     longer_than_six = [f for f in file_list if (f.get('duration') > 256 and f.get('ref') == 'AR'  and f.get('sr') == 250)]
     out_file.write(f"There are {len(longer_than_six)} edf files which are longer than 256 seconds, have SR of 250 and use average reference\n")
 

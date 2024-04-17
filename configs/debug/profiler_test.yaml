@@ -1,0 +1,8 @@
+_target_: pytorch_lightning.profilers.PyTorchProfiler
+
+profile_dir: /itet-stor/maxihuber/net_scratch/profiling/profileroutput/
+
+record_shapes: True
+with_stack: True
+profile_memory: True
+log_epoch_freq: 5

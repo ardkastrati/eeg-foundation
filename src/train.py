@@ -1,3 +1,4 @@
+import os
 from typing import Any, Dict, List, Optional, Tuple
 import psutil
 import hydra
@@ -9,6 +10,15 @@ from lightning.pytorch.loggers import Logger
 from omegaconf import DictConfig
 import multiprocessing
 import tempfile
+from lightning.pytorch.accelerators import find_usable_cuda_devices
+from torch.autograd import profiler
+
+import time, socket
+from datetime import datetime
+import sys, socket
+
+import wandb
+
 rootutils.setup_root(__file__, indicator=".project-root", pythonpath=True)
 # ------------------------------------------------------------------------------------ #
 # the setup_root above is equivalent to:
@@ -35,6 +45,8 @@ from src.utils import (
     instantiate_loggers,
     log_hyperparameters,
     task_wrapper,
+    ProfilerCallback,
+    setup_wandb,
 )
 
 log = RankedLogger(__name__, rank_zero_only=True)
@@ -44,51 +56,73 @@ log = RankedLogger(__name__, rank_zero_only=True)
 def train(cfg: DictConfig) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     """Trains the model. Can additionally evaluate on a testset, using best weights obtained during
     training.
-    
+
     This method is wrapped in optional @task_wrapper decorator, that controls the behavior during
     failure. Useful for multiruns, saving info about the crash, etc.
 
     :param cfg: A DictConfig configuration composed by Hydra.
     :return: A tuple with metrics and dict with all instantiated objects.
     """
-    
+
     # set seed for random number generators in pytorch, numpy and python.random
-    
     L.seed_everything(42, workers=True)
 
     log.info(f"Instantiating datamodule <{cfg.data._target_}>")
     datamodule: LightningDataModule = hydra.utils.instantiate(cfg.data)
 
     log.info(f"Instantiating model <{cfg.model._target_}>")
+    cfg.model.max_epochs = cfg.trainer.max_epochs
     model: LightningModule = hydra.utils.instantiate(cfg.model)
 
     log.info("Instantiating callbacks...")
     callbacks: List[Callback] = instantiate_callbacks(cfg.get("callbacks"))
 
+    log.info(f"Instantiating profiling callbacks...")
+    callbacks.append(
+        ProfilerCallback(
+            runs_dir=cfg.paths.runs_dir,
+            log_dir=cfg.debug.profile_dir,
+            record_shapes=cfg.debug.record_shapes,
+            with_stack=cfg.debug.with_stack,
+            profile_memory=cfg.debug.profile_memory,
+            log_epoch_freq=cfg.debug.log_epoch_freq,
+        )
+    )
+
     log.info("Instantiating loggers...")
-    logger: List[Logger] = instantiate_loggers(cfg.get("logger"))
-    
+    # logger = hydra.utils.instantiate(
+    #     cfg.logger,
+    #     dir=f"{cfg.data.runs_dir}/{os.getenv('SLURM_JOB_ID')}",
+    #     # group=f"{os.getenv('SLURM_JOB_ID')}",
+    # )
+    setup_wandb(cfg)
 
     log.info(f"Instantiating trainer <{cfg.trainer._target_}>")
-    trainer: Trainer = hydra.utils.instantiate(cfg.trainer, callbacks=callbacks, logger=logger, accelerator ='gpu')
+    trainer = hydra.utils.instantiate(
+        cfg.trainer,
+        num_nodes=int(os.getenv("SLURM_JOB_NUM_NODES")),
+        devices=len(os.getenv("CUDA_VISIBLE_DEVICES").split(",")),
+        callbacks=callbacks,
+        # logger=logger,
+    )
 
     object_dict = {
         "cfg": cfg,
         "datamodule": datamodule,
         "model": model,
         "callbacks": callbacks,
-        "logger": logger,
         "trainer": trainer,
     }
 
-    if logger:
-        log.info("Logging hyperparameters!")
-        log_hyperparameters(object_dict)
-    
+    # if logger:
+    #     log.info("Logging hyperparameters!")
+    #     log_hyperparameters(object_dict)
+
     if cfg.get("train"):
         log.info("Starting training!")
-        trainer.fit(model=model, datamodule=datamodule, ckpt_path=cfg.get("ckpt_path"))
-    
+        # trainer.fit(model=model, datamodule=datamodule, ckpt_path=cfg.get("ckpt_path"))
+        trainer.fit(model=model, datamodule=datamodule)
+
     train_metrics = trainer.callback_metrics
 
     if cfg.get("test"):
@@ -111,13 +145,15 @@ def train(cfg: DictConfig) -> Tuple[Dict[str, Any], Dict[str, Any]]:
 @hydra.main(version_base="1.3", config_path="../configs", config_name="train.yaml")
 def main(cfg: DictConfig) -> Optional[float]:
     """Main entry point for training.
-    
+
     :param cfg: DictConfig configuration composed by Hydra.
     :return: Optional[float] with optimized metric value.
     """
     print("At train.py entry")
-    print('RAM memory % used:', psutil.virtual_memory()[2])
-    print('RAM Used (GB):', psutil.virtual_memory()[3]/1000000000)
+    print("RAM memory % used:", psutil.virtual_memory()[2])
+    print("RAM Used (GB):", psutil.virtual_memory()[3] / 1000000000)
+    print("Usable cuda devices: ", find_usable_cuda_devices())
+
     # apply extra utilities
     # (e.g. ask for tags if none are provided in cfg, print cfg tree, etc.)
     extras(cfg)

@@ -45,7 +45,7 @@ class MaskedAutoencoderViT(nn.Module):
         # --------------------------------------------------------------------------
         # EEG specifics
         # generate an embedding for each channel name.
-        with open("/home/schepasc/eeg-foundation/src/data/edf_index/channel_json", 'r') as channel_file:
+        with open("/home/maxihuber/eeg-foundation/src/data/edf_index/channel_json", 'r') as channel_file:
             self.all_channels = json.load(channel_file)
         self.channel_embed = {}
         
