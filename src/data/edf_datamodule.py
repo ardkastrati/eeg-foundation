@@ -1,3 +1,5 @@
+import shutil
+import sys
 import torch
 import os
 import json
@@ -19,33 +21,76 @@ import tempfile
 import os
 from socket import gethostname
 import time
+from pympler import asizeof
+
+import glob
+
+from src.data.transforms import (
+    crop_spectrogram,
+    load_path_data,
+    load_channel_data,
+    fft_256,
+    custom_fft,
+    standardize,
+)
 
 
 class SimpleDataset(Dataset):
 
-    def __init__(self, spg_paths):
-        self.spg_paths = spg_paths
+    def __init__(self, paths, sampling_rates, target_size):
+        self.paths = paths
+        self.sampling_rates = sampling_rates
+        self.ffts = {}  # we have different STFTs for different sampling rates
+        self.crop = crop_spectrogram(target_size=target_size)
+        self.std = standardize()
 
     def __getitem__(self, idx):
-        spg = np.load(self.spg_paths[idx])
-        spg = torch.from_numpy(spg)
-        spg = spg.unsqueeze(0)
+        signal_path = self.paths[idx]
+        signal_sr = self.sampling_rates[idx]
+        signal_chunk = np.load(signal_path)
+        signal_chunk = torch.from_numpy(signal_chunk)
+        # print("signal_chunk.shape", signal_chunk.shape, file=sys.stderr)
+        # print("__getitem__.shape", spg.shape)
+
+        if signal_sr not in self.ffts:
+            self.ffts[signal_sr] = custom_fft(
+                window_seconds=1,
+                window_shift=0.0625,
+                sr=signal_sr,
+                cuda=False,
+            )
+
+        # == apply transforms to raw signal (on CPU) ==
+        # Applies STFT, returns spectrogram in DB (Decibel) scale
+        spg = self.ffts[signal_sr](signal_chunk)  # Compute the spectrogram using FFT.
+        # print("spg.shape", spg.shape, file=sys.stderr)
+        # Crop spectrogram to target_size
+        spg = self.crop(spg)
+        # print("cropped spg.shape", spg.shape, file=sys.stderr)
+        # Normalize cropped spectrogram (for model input)
+        spg = self.std(spg)
+        # print("std spg.shape", spg.shape, file=sys.stderr)
+        spg.unsqueeze_(0)
+
         return spg
 
     def __len__(self):
-        return len(self.spg_paths)
+        return len(self.paths)
 
 
 # https://lightning.ai/docs/pytorch/stable/data/datamodule.html#lightningdatamodule
 class EDFDataModule(LightningDataModule):
     def __init__(
         self,
-        data_dir="/home/maxihuber/eeg-foundation/src/data/000_json",  # base path of json file containing
+        data_dir=[
+            "/home/maxihuber/eeg-foundation/src/data/000_json"
+        ],  # base path of json file containing
         batch_size: int = 64,  # size of the batches of data to be used during training
         num_workers: int = 1,  # nr of subprocesses to use for data loading
         pin_memory: bool = False,  # pre-load the data into CUDA pinned memory before transferring it to the GPU (if True)
         window_size=4.0,  # size of the window (in seconds) to segment the continuous EEG data into
         window_shift=0.25,  # amount by which the window is shifted for each segment (determines the overlap between consecutive windows of data)
+        chunk_duration=4,  # duration of each chunk of EEG data (in seconds)
         min_duration=1000,  # minimum duration of EEG recordings (in seconds)
         max_duration=1200,  # maximum duration of EEG recordings (in seconds)
         select_sr=[
@@ -55,13 +100,14 @@ class EDFDataModule(LightningDataModule):
         select_ref=[
             "AR"
         ],  # list of reference types (e.g., 'AR' for average reference) to select from the data
+        discard_datasets=[],  # list of datasets to discard
         interpolate_250to256=True,  # enables interpolation of data from 250 Hz to 256 Hz
         train_val_split=[
             0.95,
             0.05,
         ],  # proportion of data to be used for training and validation
-        TMPDIR="",  # temporary directory for storing intermediate data (e.g. for caching)
         STORDIR="/dev/shm/mae",
+        path_prefix="/itet-stor/maxihuber/deepeye_storage/foundation/tueg/edf",
         target_size=[
             64,
             2048,
@@ -78,11 +124,12 @@ class EDFDataModule(LightningDataModule):
 
         super().__init__()
 
-        self.run_dir = f"{runs_dir}/{os.environ['SLURM_JOBID']}"
+        # self.run_dir = f"{runs_dir}/{os.environ['SLURM_ARRAY_JOB_ID']}"
+        self.run_dir = f"{runs_dir}/{955197}"
         self.TMPDIR = f"{self.run_dir}/tmp"
         os.makedirs(self.TMPDIR, exist_ok=True)
 
-        self.STORDIR = STORDIR  # Build index for pathnames to the EEG data
+        self.STORDIR = STORDIR  # holds the EEG signals, which were pre-loaded into node-local memory (or disk in case of STORDIR="/scratch/...")
         self.stor_mode = stor_mode
         self.data_dir = data_dir
         self.pin_memory = pin_memory
@@ -97,10 +144,12 @@ class EDFDataModule(LightningDataModule):
         self.window_shift = window_shift
         self.min_duration = min_duration
         self.max_duration = max_duration
+        self.chunk_duration = chunk_duration
         self.select_sr = select_sr
         self.select_ref = select_ref
+        self.discard_datasets = discard_datasets
         self.interpolate_250to256 = interpolate_250to256
-        self.path_prefix = "/itet-stor/maxihuber/deepeye_storage/foundation/tueg/edf"  # can this be moved into the config?
+        self.path_prefix = path_prefix  # can this be moved into the config?
         self.index = []
         self.file_index = []
         self.target_size = target_size
@@ -110,102 +159,184 @@ class EDFDataModule(LightningDataModule):
         # We want it to be true because we want to load the spectrograms into memory on every node.
         self.prepare_data_per_node = True
 
+    def filter_data_dir(self, min_duration, max_duration, select_sr, select_ref):
+        #     """
+        #     Filter the json `data_dir` index based on the specified conditions.
+        #     """
+        #     filtered_index = []
+        #     print("Filtering data dir", file=sys.stderr)
+
+        #     # iterate over each data_dir (paths to json indices of the data),
+        #     # i.e. we have one index for .edf and one for .pkl data
+        #     for data_dir in self.data_dir:
+
+        #         with open(data_dir, "r") as file:
+        #             data_index = json.load(file)
+
+        #         for index_element in data_index:
+        #             print("=" * 100, file=sys.stderr)
+
+        #             if (
+        #                 index_element["sr"] in select_sr
+        #                 # and edf_file["ref"] in select_ref
+        #                 and index_element["duration"] >= min_duration
+        #                 and index_element["duration"] <= max_duration
+        #             ):
+        #                 # the edf index comes with relative, the csv index with absolute paths
+        #                 if index_element["path"].endswith(".edf"):
+        #                     index_element["path"] = self.path_prefix + index_element["path"]
+        #                 filtered_index.append(index_element)
+
+        #     print(len(filtered_index), "files found in total", file=sys.stderr)
+        #     return filtered_index
+        pass
+
     def build_channel_index(
-        self, min_duration=0, max_duration=1200, select_sr=[256], select_ref=["AR"]
+        self,
+        min_duration=0,
+        max_duration=1200,
+        select_sr=[256],
+        select_ref=["AR"],
     ):
-        """
-        Read the json dictionary and generate an index.
+        # """
+        # Read the json dictionary (`data_dir`) and generate an index.
 
-        It can be filtered by
-        - minimum duration (in seconds)
-        - maximum duration (in seconds)
-        - sampling frequency (in Hz)
-        - EEG reference
+        # It can be filtered by
+        # - minimum duration (in seconds)
+        # - maximum duration (in seconds)
+        # - sampling frequency (in Hz)
+        # - EEG reference
 
-        Could be put into utils, also used in EDFDataModule...
-        """
-        d_index = []
+        # Could be put into utils, also used in EDFDataModule...
+        # """
+        # d_index = []
 
-        with open(self.data_dir, "r") as file:
-            data = json.load(file)
+        # with open(self.data_dir, "r") as file:
+        #     data = json.load(file)
 
-        # iterate over the JSON directory
-        for edf_file in data:
-            channel_names = edf_file["channels"]
-            path = edf_file["path"]
-            sampling_rate = edf_file["sr"]
-            ref = edf_file["ref"]
-            duration = edf_file["duration"]
-            # check whether this JSON entry satisfies the specified conditions
-            # if it does, add it to the index structure
-            if (
-                sampling_rate in select_sr
-                and ref in select_ref
-                and duration >= min_duration
-                and duration <= max_duration
-            ):
-                for chn in channel_names:
-                    d_index.append({"path": self.path_prefix + path, "chn": chn})
+        # # print(data)
+        # # print("select_sr", select_sr)
+        # # print("select_ref", select_ref)
+        # # print("min_duration", min_duration)
+        # # print("max_duration", max_duration)
 
-        print("len of created data_dir index: ", len(d_index))
+        # # iterate over the JSON directory
+        # for edf_file in data:
+        #     channel_names = edf_file["channels"]
+        #     path = edf_file["path"]
+        #     sampling_rate = edf_file["sr"]
+        #     ref = edf_file["ref"]
+        #     duration = edf_file["duration"]
+        #     # check whether this JSON entry satisfies the specified conditions
+        #     # if it does, add it to the index structure
+        #     # print("sampling_rate in select_sr", sampling_rate in select_sr)
+        #     # print("ref in select_ref", ref in select_ref)
+        #     # print("duration >= min_duration", duration >= min_duration)
+        #     # print("duration <= max_duration", duration <= max_duration)
 
-        return d_index
+        #     if (
+        #         sampling_rate in select_sr
+        #         and ref in select_ref
+        #         and duration >= min_duration
+        #         and duration <= max_duration
+        #     ):
+        #         for chn in channel_names:
+        #             d_index.append(
+        #                 {
+        #                     "path": self.path_prefix + path,
+        #                     "chn": chn,
+        #                     "ref": ref,
+        #                     "sr": sampling_rate,
+        #                     "duration": duration,
+        #                 }
+        #             )
 
-    # See https://lightning.ai/docs/pytorch/stable/data/datamodule.html#prepare-data
+        # print("len of created data_dir index: ", len(d_index))
+
+        # return d_index
+        pass
+
+    # # See https://lightning.ai/docs/pytorch/stable/data/datamodule.html#prepare-data
     def prepare_data(self) -> None:
-        """
-        This method is called by the node with LOCAL_RANK=0 once, before the training process starts.
-        It is used to perform any data downloading or preprocessing tasks that are independent of the
-        cross-validation folds or the distributed setup.
+        #     """
+        #     This method is called by the node with LOCAL_RANK=0 once, before the training process starts.
+        #     It is used to perform any data downloading or preprocessing tasks that are independent of the
+        #     cross-validation folds or the distributed setup.
 
-        The current implementation loads all data into node local memory.
+        #     The current implementation loads all data into node local memory.
 
-        With LightningDataModule.prepare_data_per_node=True, this method is executed on every node with LOCAL_RANK=0.
+        #     With LightningDataModule.prepare_data_per_node=True, this method is executed on every node with LOCAL_RANK=0.
 
-        ATTENTION: When using multiple GPU to train, needs the newest lightning dev-build (2.3.0.dev).
-        There is a barrier for all processes here, and in stable release lightning,
-        it will timeout after 30 min, which is usually not enough to store all the spectrograms.
-        """
-        print(f"Preparing data on {self.hostname}")
-        print("RAM memory % used:", psutil.virtual_memory()[2])
-        print("RAM Used (GB):", psutil.virtual_memory()[3] / 1000000000)
-        print("RAM Total (GB):", psutil.virtual_memory()[0] / 1000000000)
+        #     ATTENTION: When using multiple GPUs to train, this needs the newest lightning dev-build (2.3.0.dev). [quote Pascal]
+        #     There is a barrier for all processes here, and in stable release lightning, it will timeout after 30 min, which is usually not enough to store all the spectrograms.
+        #     """
+        #     print(f"Preparing data on {self.hostname}", file=sys.stderr)
+        #     print("RAM memory % used:", psutil.virtual_memory()[2], file=sys.stderr)
+        #     print(
+        #         "RAM Used (GB):", psutil.virtual_memory()[3] / 1000000000, file=sys.stderr
+        #     )
+        #     print(
+        #         "RAM Total (GB):", psutil.virtual_memory()[0] / 1000000000, file=sys.stderr
+        #     )
 
-        start_time = time.time()
+        #     start_time = time.time()
 
-        # build an index, you can select which files you want to include with parameters.
-        raw_paths = self.build_channel_index(
-            max_duration=self.max_duration,
-            min_duration=self.min_duration,
-            select_sr=self.select_sr,
-            select_ref=self.select_ref,
-        )
+        #     # Filter the data_dir json file based on the specified conditions.
+        #     raw_paths = self.filter_data_dir(
+        #         min_duration=self.min_duration,
+        #         max_duration=self.max_duration,
+        #         select_sr=self.select_sr,
+        #         select_ref=self.select_ref,
+        #     )
 
-        # save the spectrograms. note that these attributes are not shared by the processes on other GPUs, that's why an index is saved in the /tmp directory.
-        # Also returning the temporary directory objects, so that they don't close themselfes. Can close them in the teardown section (for example at beginning of the testing loop)
-        self.spg_paths, self.parent, self.subdir = save.load_and_save_spgs(
-            raw_paths=raw_paths,
-            STORDIR=self.STORDIR,
-            TMPDIR=self.TMPDIR,
-            hostname=self.hostname,
-        )
+        #     local_loader = save.LocalLoader(
+        #         num_threads=7,
+        #         base_stor_dir=self.STORDIR,
+        #     )
 
-        end_time = time.time()
+        #     # chunk_paths is a list containing paths to json files, which in turn are of the form
+        #     # {0: path_to/signal0.npy, 1: path_to/signal1.npy, ...}
+        #     chunk_paths = local_loader.run(raw_paths, self.chunk_duration)
+        #     print(chunk_paths, file=sys.stderr)
 
-        # Logging
-        self.data_preparation_time = end_time - start_time
-        with open(
-            f"{self.run_dir}/metrics/data_preparation_time_{os.environ['SLURM_PROCID']}_{self.hostname}.txt",
-            "w",
-        ) as file:
-            file.write(str(self.data_preparation_time))
+        #     # we store this list into a json file in the TMPDIR,
+        #     # so that each process can access it in the setup method afterwards
+        #     with open(
+        #         os.path.join(self.TMPDIR, f"index_path_{gethostname()}.json"), "w"
+        #     ) as file:
+        #         json.dump(chunk_paths, file)
 
-        wandb.log({"data_preparation_time": self.data_preparation_time}, step=0)
+        #     # # save the spectrograms. note that these attributes are not shared by the processes on other GPUs, that's why an index is saved in the /tmp directory.
+        #     # # Also returning the temporary directory objects, so that they don't close themselfes. Can close them in the teardown section (for example at beginning of the testing loop)
+        #     # self.spg_paths, self.parent, self.subdir = save.load_and_save_spgs(
+        #     #     raw_paths=raw_paths,
+        #     #     STORDIR=self.STORDIR,
+        #     #     TMPDIR=self.TMPDIR,
+        #     #     window_size=self.window_size,
+        #     #     window_shift=self.window_shift,
+        #     #     target_size=self.target_size,
+        #     #     chunk_duration=self.chunk_duration,
+        #     # )
+        #     # # TODO: I think we don't need to store the self.spg_paths attribute because we never use it again
+        #     # print(f"Stored {len(self.spg_paths)} spectrograms!")
 
-        print(f"Prepared data on {self.hostname}")
-        print("RAM memory % used:", psutil.virtual_memory()[2])
-        print("RAM Used (GB):", psutil.virtual_memory()[3] / 1000000000)
-        print("RAM Total (GB):", psutil.virtual_memory()[0] / 1000000000)
+        #     end_time = time.time()
+
+        #     # Logging
+        #     self.data_preparation_time = end_time - start_time
+        #     with open(
+        #         f"{self.run_dir}/metrics/data_preparation_time_{os.environ['SLURM_PROCID']}_{self.hostname}.txt",
+        #         "w",
+        #     ) as file:
+        #         file.write(str(self.data_preparation_time))
+
+        #     wandb.log({"data_preparation_time": self.data_preparation_time}, step=0)
+
+        #     print(f"Prepared data on {self.hostname}")
+        #     print("RAM memory % used:", psutil.virtual_memory()[2])
+        #     print("RAM Used (GB):", psutil.virtual_memory()[3] / 1000000000)
+        #     print("RAM Total (GB):", psutil.virtual_memory()[0] / 1000000000)
+        pass
 
     # See https://lightning.ai/docs/pytorch/stable/data/datamodule.html#setup
     def setup(self, stage=None) -> None:
@@ -216,20 +347,92 @@ class EDFDataModule(LightningDataModule):
         Every node will call this method and initialize the datasets.
         """
 
-        print("Before dataset creation")
+        print("Before dataset creation", file=sys.stderr)
 
-        # access the index in the tmpdir, so each process has it.
-        file_path = os.path.join(self.TMPDIR, f"index_path_{self.hostname}.txt")
+        # == Fetch paths to data on local memory/disk ==
 
-        with open(file_path, "r") as file:
-            index_path = file.read()
+        # self.pointer_file_paths = sorted(
+        #     glob.glob(
+        #         os.path.join(
+        #             f"/itet-stor/maxihuber/net_scratch/runs/{os.environ['SLURM_ARRAY_JOB_ID']}/tmp",
+        #             f"index_path_{gethostname()}_*.txt",
+        #         )
+        #     )
+        # )
+        self.pointer_file_paths = sorted(
+            glob.glob(
+                os.path.join(
+                    f"/itet-stor/maxihuber/net_scratch/runs/{955197}/tmp",
+                    f"index_path_{gethostname()}_*.txt",
+                )
+            )
+        )
+        print(
+            "Collecting data from these files:",
+            self.pointer_file_paths,
+            file=sys.stderr,
+        )
 
-        # load the index and change the keys back to integers, since they get converted to strings on saving.
-        with open(index_path, "r") as file:
-            paths = json.load(file)
-            paths = {int(key): value for key, value in paths.items()}
+        paths = {}
+        sampling_rates = {}
+        num_datapoints = 0
 
-        entire_dataset = SimpleDataset(paths)
+        for pointer_file_path in self.pointer_file_paths:
+
+            with open(pointer_file_path, "r") as pointer_file:
+                path_to_data_index = pointer_file.read()
+
+                with open(path_to_data_index, "r") as index_file:
+                    chunks_index = json.load(index_file)
+
+                    for _, chunk_dict in chunks_index.items():
+
+                        # paths.append(chunk_dict["path"])
+                        # sampling_rates.append(chunk_dict["sr"])
+                        paths[num_datapoints] = chunk_dict["path"]
+                        sampling_rates[num_datapoints] = chunk_dict["sr"]
+                        num_datapoints += 1
+
+                    # print(
+                    #     "num_datapoints so far:",
+                    #     num_datapoints,
+                    #     file=sys.stderr,
+                    # )
+                    # paths_size = asizeof.asizeof(paths)
+                    # print(
+                    #     f"Total size of the paths including elements: {paths_size} bytes",
+                    #     file=sys.stderr,
+                    # )
+                    # sampling_rates_size = asizeof.asizeof(sampling_rates)
+                    # print(
+                    #     f"Total size of the sampling rates including elements: {sampling_rates_size} bytes",
+                    #     file=sys.stderr,
+                    # )
+                    # print(
+                    #     f"RAM memory % used on {gethostname()}:",
+                    #     psutil.virtual_memory()[2],
+                    #     file=sys.stderr,
+                    # )
+                    # print(
+                    #     "RAM Used (GB):",
+                    #     psutil.virtual_memory()[3] / 1_000_000_000,
+                    #     file=sys.stderr,
+                    # )
+
+        # == Initialize Datasets ==
+        entire_dataset = SimpleDataset(
+            paths=paths,
+            sampling_rates=sampling_rates,
+            target_size=self.target_size,
+        )
+        print("After dataset creation", file=sys.stderr)
+
+        # for i in range(len(entire_dataset)):
+        #     spg = entire_dataset[i]
+        #     if spg.size() != torch.Size([1, 64, 64]):
+        #         print(f"Issue at index {i}: {spg.size()}")
+
+        print("Nr. of datapoints:", len(entire_dataset), file=sys.stderr)
 
         train_size = int(self.train_val_split[0] * len(entire_dataset))
         val_size = len(entire_dataset) - train_size
@@ -242,7 +445,22 @@ class EDFDataModule(LightningDataModule):
             entire_dataset, [train_size, val_size]
         )
 
+        print("After LightningDataModule.setup", file=sys.stderr)
+        print("RAM memory % used:", psutil.virtual_memory()[2], file=sys.stderr)
+        print(
+            "RAM Used (GB):",
+            psutil.virtual_memory()[3] / 1_000_000_000,
+            file=sys.stderr,
+        )
+
+        # assert False, "break after setup"
+
     def train_dataloader(self):
+
+        # Handle variable lengths (x-axis) of spectrograms
+        def custom_collate_fn(batch):
+            return torch.stack(batch)
+
         return DataLoader(
             self.train_dataset,
             shuffle=True,  # apparently, it is not advised to set shuffle=True because Lightning will do it for us in distributed setting, TODO: look into it later
@@ -269,29 +487,29 @@ class EDFDataModule(LightningDataModule):
     def predict_dataloader(self):
         pass
 
-    def teardown(self, stage) -> None:
-        """Lightning hook for cleaning up after `trainer.fit()`, `trainer.validate()`,
-        `trainer.test()`, and `trainer.predict()`.
+    # def teardown(self, stage):
+    #     """Clean up subdirectories and files in self.STORDIR after training/validation/testing.
 
-        :param stage: The stage being torn down. Either `"fit"`, `"validate"`, `"test"`, or `"predict"`.
-            Defaults to ``None``.
-        """
+    #     :param stage: The stage being torn down. Either `"fit"`, `"validate"`, `"test"`, or `"predict"`.
+    #     """
+    #     print(f"Teardown called for stage: {stage}", sys.stderr)
+    #     if os.path.exists(self.STORDIR):
+    #         print(
+    #             f"Removing all files and subdirectories in: {self.STORDIR}", sys.stderr
+    #         )
+    #         shutil.rmtree(self.STORDIR)
 
-        # can optionally delete the temporary directory here after the training is done.
+    # def state_dict(self):
+    #     """Called when saving a checkpoint. Implement to generate and save the datamodule state.
 
-        pass
+    #     :return: A dictionary containing the datamodule state that you want to save.
+    #     """
+    #     return {}
 
-    def state_dict(self):
-        """Called when saving a checkpoint. Implement to generate and save the datamodule state.
+    # def load_state_dict(self, state_dict) -> None:
+    #     """Called when loading a checkpoint. Implement to reload datamodule state given datamodule
+    #     `state_dict()`.
 
-        :return: A dictionary containing the datamodule state that you want to save.
-        """
-        return {}
-
-    def load_state_dict(self, state_dict) -> None:
-        """Called when loading a checkpoint. Implement to reload datamodule state given datamodule
-        `state_dict()`.
-
-        :param state_dict: The datamodule state returned by `self.state_dict()`.
-        """
-        pass
+    #     :param state_dict: The datamodule state returned by `self.state_dict()`.
+    #     """
+    #     pass

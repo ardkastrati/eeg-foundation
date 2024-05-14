@@ -43,7 +43,7 @@ I have lots of predefined commands in the Makefile.
 
 The most important are:
 
-`sbatch`: submits the `slurm/train.slurm` script to the SLURM controller. The script then initiates the training. Set it up as you like.
+`make fulltrain`: loads data into node-local memory (or scratch disk) with multiple worker processes (using a SLURM array job), and afterwards automatically starts a normal SLURM sbatch job that runs the training, after which the data is erased from memory again. Everything is automated, and the training script is modified to make use of the array job as well.
 
 Note: the following parameters need only be set in the slurm script and not in the configs or train scripts. I have taken care of that double declaration issue by pasting the slurm environment variables in the `train.py` script instead of manually inserting them. Also, please note that `--gres=gpu` needs to be equal to `--ntasks-per-node`.
 
@@ -57,9 +57,14 @@ Note: the following parameters need only be set in the slurm script and not in t
 
 `make free`: Prints an overview of the GPUs in the Arton cluster (runs `smon` under the hood)
 
+`make visualize`: Runs the visualization pipeline for trace files of the PyTorch Profiler. You need to put the runs you want ready to be displayed with tensorboard into the `src/utils/visualization_pipeline.py` file (see below).
+
+Outdated:
+
+`make sbatch`: submits the `slurm/train.slurm` script to the SLURM controller. The script then initiates the training. Set it up as you like.
+
 `make train`: Runs the train script in an interactive session. Make sure to connect to a compute node first (e.g. with `make gpuserver`). Using this command only makes sense when working with a single GPU. The SLURM controlled should be used when working with >1 GPUs or longer trainings.
 
-`make visualize`: Runs the visualization pipeline for trace files of the PyTorch Profiler. You need to put the runs you want ready to be displayed with tensorboard into the `src/utils/visualization_pipeline.py` file (see below).
 
 ### Configs
 

@@ -1,5 +1,3 @@
-import os
-import pickle
 import src.models.mae_original as mae
 import wandb
 import torch
@@ -8,8 +6,6 @@ from torchmetrics import MaxMetric, MeanMetric
 from torchmetrics.classification.accuracy import Accuracy
 import matplotlib.pyplot as plt
 import numpy as np
-import time
-import sys
 
 import timm.optim.optim_factory as optim_factory
 from socket import gethostname
@@ -48,7 +44,8 @@ class MAEModule(LightningModule):
 
         # this line allows to access init params with 'self.hparams' attribute
         # also ensures init params will be stored in ckpt
-        self.save_hyperparameters(logger=False, ignore=["net"])
+        # self.save_hyperparameters(logger=False, ignore=["net"])
+        self.save_hyperparameters(logger=False)
         self.img_log_frq = img_log_frq
         self.net = net
         self.learning_rate = learning_rate
@@ -74,11 +71,20 @@ class MAEModule(LightningModule):
         Returns:
             loss: The calculated loss.
         """
-        loss, _, mask, _ = self.net(x, mask_ratio=self.mask_ratio)
+        loss, pred, mask, _ = self.net(x, mask_ratio=self.mask_ratio)
         return loss
 
     def training_step(self, batch, batch_idx):
-        """ """
+        """
+        Performs a single training step on the given batch of data.
+
+        Args:
+            batch: The input batch of data.
+            batch_idx: The index of the current batch.
+
+        Returns:
+            The loss value computed during the training step.
+        """
 
         # Forward pass of the model
         loss = self.forward(batch)
@@ -125,7 +131,8 @@ class MAEModule(LightningModule):
         #     {"val_loss": loss.detach()},
         #     step=self.trainer.global_step,
         # )
-        # self.log("val_loss", loss, on_step=True, on_epoch=True)
+        # Log validation loss for checkpointing: TODO rank_zero_only ?
+        self.log("val_loss", loss, rank_zero_only=True)
         ############################
         if step % 50 == 0:
             wandb.log(
@@ -213,19 +220,24 @@ class MAEModule(LightningModule):
             )
 
             # returns prediction image in size (b, 128, 1024)
+            # print("batch shape", batch.shape)
             loss_rec, pred, mask, _ = self.net.forward(
                 batch, mask_ratio=self.mask_ratio
             )
+            # print("pred shape", pred.shape)
+            # print("mask shape", mask.shape)
 
             mask = mask[0, :]
 
             # save masked image
 
             in_patch = self.net.patchify(batch[:1, :, :, :])
+            # print("in_patch.shape 1:", in_patch.shape)
             in_patch = in_patch[0, :, :]
+            # print("in_patch.shape 2:", in_patch.shape)
 
             # apply mask
-            for i in range(512):
+            for i in range(in_patch.shape[0] - 1):
                 in_patch[i] = in_patch[i] * (1 - mask[i])
 
             # reassemble
@@ -261,8 +273,9 @@ class MAEModule(LightningModule):
             # overlay predicted patches over masked patches in original image
 
             pred_patches = pred_patches[0, :, :]
+            # print("pred_patches.shape:", pred_patches.shape)
 
-            for i in range(512):
+            for i in range(pred_patches.shape[0] - 1):
                 pred_patches[i] = pred_patches[i] * mask[i]
 
             pred_patches = pred_patches[np.newaxis, :, :]
