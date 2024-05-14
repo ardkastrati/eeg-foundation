@@ -1,3 +1,6 @@
+# GitHub folders
+/.github/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -154,6 +157,15 @@ dmypy.json
 /run_tmp
 /wandb
 /googlesheetresults
+tmp_STORDIR
+
+# Results
+results/*
+!results/.keep
+
+# Development
+development/*
+!development/.keep
 
 # Checkpoints (WandB & Lightning)
 /eeg-foundation
@@ -167,6 +179,9 @@ spg_paths*.txt
 /data/
 /logs/
 .env
+
+# indices_and_labels
+/indices_and_labels/
 
 # Aim logging
 .aim

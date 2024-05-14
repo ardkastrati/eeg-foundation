@@ -1,7 +1,13 @@
+import pickle
 import sys
 
 import mne
+import pandas as pd
+import numpy as np
+
+import mne
 import json
+import pandas as pd
 import scipy
 import scipy.signal
 import random
@@ -19,48 +25,71 @@ import multiprocessing
 from torchvision import transforms
 
 
+from pyprep.prep_pipeline import PrepPipeline
+
+import logging
+
+
 class crop_spectrogram:
-
-    def __init__(self, target_size=(128, 1024)):
-
+    def __init__(self, target_size=(64, 64)):
         self.target_height = target_size[0]
         self.target_width = target_size[1]
 
     def __call__(self, spectrogram):
+        # Crop or pad the height
+        height_pad = self.target_height - (
+            spectrogram.shape[0] - 4
+        )  # Adjust for the vertical crop starting at index 4
 
-        # crop vertically
+        if height_pad > 0:
+            # If padding is needed (spectrogram is shorter than target height)
+            pad = torch.nn.ZeroPad2d(
+                (0, 0, 4, height_pad)
+            )  # Pad the top by 4 rows, bottom by height_pad rows
+            spectrogram = pad(spectrogram)
+            # Adjust crop to new padding
+            spectrogram = spectrogram[: self.target_height, :]
+        else:
+            # If cropping is needed (or just slicing without padding)
+            spectrogram = spectrogram[4 : 4 + self.target_height, :]
 
-        spectrogram = spectrogram[4 : 4 + self.target_height, :]
-
-        # crop&pad horizontally (padding shouldn't be necessary because of our sample selection but just in case)
-
+        # Crop or pad the width
         width_pad = self.target_width - spectrogram.shape[1]
 
         if width_pad > 0:
-
-            pad = torch.nn.ZeroPad2d((0, width_pad, 0, 0))
+            # Pad the width if necessary
+            pad = torch.nn.ZeroPad2d(
+                (0, width_pad, 0, 0)
+            )  # Left padding is 0, right padding is width_pad
             spectrogram = pad(spectrogram)
         elif width_pad < 0:
-            spectrogram = spectrogram[:, 0 : self.target_width]
+            # Crop the width if necessary
+            spectrogram = spectrogram[:, : self.target_width]
 
-        # add 1 'image channel'
+        return spectrogram
 
+
+class standardize:
+    def __call__(self, spectrogram):
+        # normalize on per sample basis
+        spectrogram = (spectrogram - torch.mean(spectrogram)) / (
+            torch.std(spectrogram) * 2
+        )
         return spectrogram
 
 
 class fft_256:
 
     # compute spetrogram from channel data
-    def __init__(self, window_size=4.0, window_shift=0.25, cuda=False):
+    def __init__(self, window_size=4.0, window_shift=0.25, sr=256, cuda=False):
 
         super().__init__()
         self.fft256 = torchaudio.transforms.Spectrogram(
             n_fft=int(4.0 * 256),
-            win_length=int(window_size * 256),
-            hop_length=int(window_shift * 256),
+            win_length=int(window_size * sr),
+            hop_length=int(window_shift * sr),
             normalized=True,
         )
-        # TODO: is it necessary to send to device?
         if cuda:
             self.fft256 = self.fft256.to("cuda")
 
@@ -80,51 +109,119 @@ class fft_256:
         return spectrogram
 
 
-class load_channel_data:
+class custom_fft:
+    """
+    FFT transform that takes in a window size and shift
+    and computes the spectrogram using the torchaudio library.
 
-    def __init__(self, precrop=True, crop_idx=[60, 316]):
+    The output is converted to decibel scale, and normalized to have zero mean and unit variance.
+    """
 
-        self.crop_idx = crop_idx
-        self.precrop = precrop
+    def __init__(self, window_seconds, window_shift, sr, cuda=False):
+        super().__init__()
+        win_length = int(sr * window_seconds)
+        hop_length = int(sr / 16)
+        # print("win_length", win_length)
+        # print("hop_length", hop_length)
+        self.fft = torchaudio.transforms.Spectrogram(
+            n_fft=win_length,
+            win_length=win_length,
+            hop_length=hop_length,
+            normalized=True,
+        )
+        if cuda:
+            self.fft = self.fft.to("cuda")
 
     def __call__(self, data):
+        """
+        Apply short-time Fourier transform (STFT) to the input data.
 
+        Args:
+            data (torch.Tensor): The input data.
+
+        Returns:
+            torch.Tensor: The transformed data.
+        """
+        spectrogram = self.fft(data)
+
+        # Maxim: inserted this, but not sure if needed
+        spectrogram = torch.abs(spectrogram)
+
+        # convert to decibel, avoid log(0)
+        spectrogram = 20 * torch.log10(spectrogram + 1e-10)
+
+        return spectrogram
+
+
+def create_raw(
+    data,
+    ch_names1,
+    sr,
+    ch_names2=None,
+):
+    if ch_names2 == None:
+        ch_names2 = ch_names1
+    ch_types = ["eeg" for _ in range(len(ch_names1))]
+    info = mne.create_info(ch_names2, ch_types=ch_types, sfreq=sr)
+    eeg_data = (
+        np.array(data[ch_names1].T, dtype="float") / 1_000_000
+    )  # in Volt # TODO not sure if each dataset is in uv
+    raw = mne.io.RawArray(eeg_data, info)
+    return raw
+
+
+def avg_channel(raw):
+    avg = raw.copy().add_reference_channels(ref_channels="AVG_REF")
+    avg = avg.set_eeg_reference(ref_channels="average")
+    return avg
+
+
+class load_path_data:
+    def __init__(self):
+        logger = logging.getLogger("pyprep")
+        logger.setLevel(logging.ERROR)
         mne.set_log_level("WARNING")
 
-        # takes as input a tuple of path and string and returns the channaldata cropped to the timeframe [1min:5min15seconds]
-        path = data["path"]
-        chn = data["chn"]
+    def __call__(self, index_element):
 
-        # include = chn -> only loads the data for the channel we want the sample from.
-        edf_data = mne.io.read_raw_edf(path, include=chn, preload=True)
-
-        data = edf_data.get_data()
-
-        sr = int(edf_data.info["sfreq"])
-
-        channel_data = edf_data[chn][0]
-
-        # convert to u_volt
-        channel_data = channel_data * 1000000
-
-        channel_data = torch.from_numpy(channel_data)
-
-        channel_data = channel_data.squeeze(0)
-        # cropping, removing first minute
-
-        if self.precrop:
-            channel_data = channel_data[sr * self.crop_idx[0] : sr * self.crop_idx[1]]
-
-        # interpolate to 256sr
-        if sr == 250:
-
-            new_length = (len(channel_data) // 250) * 256
-            channel_data = (
-                interpolate(
-                    channel_data.unsqueeze(0).unsqueeze(0), new_length, mode="nearest"
-                )
-                .squeeze(0)
-                .squeeze(0)
+        if index_element["path"].endswith(".edf"):
+            # For EDF: all channels are good at the moment
+            eeg_data = mne.io.read_raw_edf(
+                index_element["path"],
+                include=index_element["channels"],
+                preload=True,
             )
 
-        return channel_data
+        elif index_element["path"].endswith("pkl"):
+            # Load DataFrame from pickle
+            with open(index_element["path"], "rb") as file:
+                df = pd.read_pickle(file)
+                # Create a mne.Raw to be compatible with the coming processing steps
+                eeg_data = create_raw(
+                    data=df,
+                    # TODO: only include the good_channels here
+                    ch_names1=index_element["channels"],
+                    sr=index_element["sr"],
+                )
+
+        else:
+            assert False, "Invalid path"
+
+        # Add average reference
+        eeg_data = avg_channel(eeg_data)
+
+        # Datastructure to access data for each channel
+        channel_data_dict = {}
+
+        # Note: includes also AVG_REF channel
+        for channel in eeg_data.ch_names:
+            idx = eeg_data.ch_names.index(channel)
+            data, times = eeg_data[idx, :]
+            # Flatten the data to 1D if required
+            channel_data_dict[channel] = data.flatten()
+
+        return channel_data_dict
+
+
+def load_channel_data():
+    pass

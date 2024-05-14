@@ -1,23 +1,15 @@
 import os
+import sys
 from typing import Any, Dict, List, Optional, Tuple
-import psutil
+
 import hydra
+import psutil
+from lightning import Callback, LightningDataModule, LightningModule
+from lightning.pytorch.accelerators import find_usable_cuda_devices
+from omegaconf import DictConfig
+
 import lightning as L
 import rootutils
-import torch
-from lightning import Callback, LightningDataModule, LightningModule, Trainer
-from lightning.pytorch.loggers import Logger
-from omegaconf import DictConfig
-import multiprocessing
-import tempfile
-from lightning.pytorch.accelerators import find_usable_cuda_devices
-from torch.autograd import profiler
-
-import time, socket
-from datetime import datetime
-import sys, socket
-
-import wandb
 
 rootutils.setup_root(__file__, indicator=".project-root", pythonpath=True)
 # ------------------------------------------------------------------------------------ #
@@ -37,13 +29,12 @@ rootutils.setup_root(__file__, indicator=".project-root", pythonpath=True)
 # more info: https://github.com/ashleve/rootutils
 # ------------------------------------------------------------------------------------ #
 
+from src.models.mae_module import MAEModule
 from src.utils import (
     RankedLogger,
     extras,
     get_metric_value,
     instantiate_callbacks,
-    instantiate_loggers,
-    log_hyperparameters,
     task_wrapper,
     ProfilerCallback,
     setup_wandb,
@@ -67,12 +58,7 @@ def train(cfg: DictConfig) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     # set seed for random number generators in pytorch, numpy and python.random
     L.seed_everything(42, workers=True)
 
-    log.info(f"Instantiating datamodule <{cfg.data._target_}>")
-    datamodule: LightningDataModule = hydra.utils.instantiate(cfg.data)
-
-    log.info(f"Instantiating model <{cfg.model._target_}>")
-    cfg.model.max_epochs = cfg.trainer.max_epochs
-    model: LightningModule = hydra.utils.instantiate(cfg.model)
+    # == Instantiate Callbacks ==
 
     log.info("Instantiating callbacks...")
     callbacks: List[Callback] = instantiate_callbacks(cfg.get("callbacks"))
@@ -89,6 +75,8 @@ def train(cfg: DictConfig) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         )
     )
 
+    # == Instantiate Loggers ==
+
     log.info("Instantiating loggers...")
     # logger = hydra.utils.instantiate(
     #     cfg.logger,
@@ -97,13 +85,46 @@ def train(cfg: DictConfig) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     # )
     setup_wandb(cfg)
 
+    # == Instantiate DataModule ==
+
+    log.info(f"Instantiating datamodule <{cfg.data._target_}>")
+    datamodule: LightningDataModule = hydra.utils.instantiate(cfg.data)
+
+    # == Instantiate Model ==
+
+    log.info(f"Instantiating model <{cfg.model._target_}>")
+    cfg.model.max_epochs = cfg.trainer.max_epochs
+    if cfg.restore_from_checkpoint and cfg.restore_from_checkpoint_path:
+        checkpoint_path = cfg.restore_from_checkpoint_path
+        if os.path.exists(checkpoint_path):
+            log.info(f"Restoring model from checkpoint: {checkpoint_path}")
+            model: LightningModule = MAEModule.load_from_checkpoint(checkpoint_path)
+        else:
+            log.error(f"Checkpoint path does not exist: {checkpoint_path}")
+            raise FileNotFoundError(
+                f"Checkpoint path does not exist: {checkpoint_path}"
+            )
+    else:
+        log.info("Starting training from scratch or checkpoint path not provided.")
+        model: LightningModule = hydra.utils.instantiate(cfg.model)
+
+    # == Instantiate Trainer ==
+
+    # Check if a checkpoint path is provided and exists
     log.info(f"Instantiating trainer <{cfg.trainer._target_}>")
+    if cfg.restore_from_checkpoint and os.path.isfile(cfg.restore_from_checkpoint_path):
+        log.info(f"Resuming training from checkpoint: {cfg.restore_from_checkpoint}")
+        trainer_cfg = dict(cfg.trainer)
+        ckpt_path = cfg.restore_from_checkpoint_path
+    else:
+        trainer_cfg = cfg.trainer
+
     trainer = hydra.utils.instantiate(
-        cfg.trainer,
+        trainer_cfg,
         num_nodes=int(os.getenv("SLURM_JOB_NUM_NODES")),
-        devices=len(os.getenv("CUDA_VISIBLE_DEVICES").split(",")),
+        devices=(len(os.getenv("CUDA_VISIBLE_DEVICES").split(","))),
         callbacks=callbacks,
-        # logger=logger,
+        # logger=logger,  # Uncomment if logger is configured
     )
 
     object_dict = {
@@ -114,16 +135,20 @@ def train(cfg: DictConfig) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         "trainer": trainer,
     }
 
-    # if logger:
-    #     log.info("Logging hyperparameters!")
-    #     log_hyperparameters(object_dict)
+    # == Run Training ==
 
     if cfg.get("train"):
         log.info("Starting training!")
-        # trainer.fit(model=model, datamodule=datamodule, ckpt_path=cfg.get("ckpt_path"))
-        trainer.fit(model=model, datamodule=datamodule)
+        trainer.fit(
+            model=model,
+            datamodule=datamodule,
+            ckpt_path=ckpt_path if cfg.restore_from_checkpoint else None,
+        )
+        # trainer.fit(model=model, datamodule=datamodule)
 
     train_metrics = trainer.callback_metrics
+
+    # == Run Testing ==
 
     if cfg.get("test"):
         log.info("Starting testing!")
@@ -149,10 +174,10 @@ def main(cfg: DictConfig) -> Optional[float]:
     :param cfg: DictConfig configuration composed by Hydra.
     :return: Optional[float] with optimized metric value.
     """
-    print("At train.py entry")
-    print("RAM memory % used:", psutil.virtual_memory()[2])
-    print("RAM Used (GB):", psutil.virtual_memory()[3] / 1000000000)
-    print("Usable cuda devices: ", find_usable_cuda_devices())
+    print("At train.py entry", file=sys.stderr)
+    print("RAM memory % used:", psutil.virtual_memory()[2], file=sys.stderr)
+    print("RAM Used (GB):", psutil.virtual_memory()[3] / 1_000_000_000, file=sys.stderr)
+    print("Usable cuda devices: ", find_usable_cuda_devices(), file=sys.stderr)
 
     # apply extra utilities
     # (e.g. ask for tags if none are provided in cfg, print cfg tree, etc.)

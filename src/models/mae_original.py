@@ -10,9 +10,12 @@
 # --------------------------------------------------------
 
 from functools import partial
+import glob
 from json import encoder
 
 import json
+import os
+from socket import gethostname
 import torch
 import torch.nn as nn
 
@@ -26,6 +29,15 @@ from src.utils.pos_embed import (
 from src.utils.misc import concat_all_gather
 from src.utils.patch_embed import PatchEmbed_new, PatchEmbed_org
 from timm.models.swin_transformer import SwinTransformerBlock
+
+from src.data.transforms import (
+    crop_spectrogram,
+    load_path_data,
+    load_channel_data,
+    fft_256,
+    custom_fft,
+    standardize,
+)
 
 
 class MaskedAutoencoderViT(nn.Module):
@@ -52,7 +64,7 @@ class MaskedAutoencoderViT(nn.Module):
 
     def __init__(
         self,
-        img_size=(128, 1024),
+        img_size,
         patch_size=16,
         stride=10,
         in_chans=3,
@@ -97,10 +109,28 @@ class MaskedAutoencoderViT(nn.Module):
         # - learning distinct embeddings for each channel makes it possible to
         #   exploit the unique characteristics of the signals from different parts of the scalp
 
-        with open(
-            "/home/maxihuber/eeg-foundation/src/data/edf_index/channel_json", "r"
-        ) as channel_file:
-            self.all_channels = json.load(channel_file)
+        all_channels = set()
+        # self.channel_names_paths = sorted(
+        #     glob.glob(
+        #         os.path.join(
+        #             f"/itet-stor/maxihuber/net_scratch/runs/{os.environ['SLURM_ARRAY_JOB_ID']}/tmp",
+        #             f"channels_{gethostname()}_*.txt",
+        #         )
+        #     )
+        # )
+        self.channel_names_paths = sorted(
+            glob.glob(
+                os.path.join(
+                    f"/itet-stor/maxihuber/net_scratch/runs/{955197}/tmp",
+                    f"channels_{gethostname()}_*.txt",
+                )
+            )
+        )
+        for path_to_channel_set in self.channel_names_paths:
+            with open(path_to_channel_set, "r") as file:
+                channel_set = json.load(file)
+                all_channels.update(channel_set)
+        self.all_channels = list(all_channels)
 
         self.channel_embed = {}  # store embeddings for each channel in a dictionary
         for channel in self.all_channels:  # zero-initialize each channel embedding
@@ -212,7 +242,8 @@ class MaskedAutoencoderViT(nn.Module):
                 decoder_modules.append(
                     SwinTransformerBlock(
                         dim=decoder_embed_dim,
-                        num_heads=16,
+                        # num_heads=16, # maxihuber: changed to decoder_num_heads
+                        num_heads=decoder_num_heads,
                         feat_size=feat_size,
                         window_size=window_size,
                         shift_size=shift_size,
@@ -494,12 +525,16 @@ class MaskedAutoencoderViT(nn.Module):
 
         # embed patches (pass through patch_embed layer)
         # i.e. transform input images into a sequence of flattened patches
+        # print("before self.path_embed(x)", x.shape)
         x = self.patch_embed(x)
+        # print("after self.path_embed(x)", x.shape)
 
         channels = []
 
         # add pos embed (exclude cls token)
+        # print("self.pos_embed[:,1:,:]", self.pos_embed[:, 1:, :].shape)
         x = x + self.pos_embed[:, 1:, :]
+        # print("after x + self.pos_embed[:, 1:, :]", x.shape)
 
         # masking: length -> length * mask_ratio
         if mask_2d:  # apply both time and frequency masking
@@ -579,6 +614,8 @@ class MaskedAutoencoderViT(nn.Module):
         # add pos embed
         x = x + self.decoder_pos_embed
 
+        # print("after pos embed", x.shape)
+
         if self.decoder_mode != 0:
             B, L, D = x.shape
             x = x[:, 1:, :]
@@ -591,6 +628,7 @@ class MaskedAutoencoderViT(nn.Module):
         else:
             # apply Transformer blocks
             for blk in self.decoder_blocks:
+                # print("before blk", x.shape)
                 x = blk(x)
 
         x = self.decoder_norm(x)
@@ -631,7 +669,7 @@ class MaskedAutoencoderViT(nn.Module):
 
     def forward(self, imgs, mask_ratio=0.5):
 
-        # Encoder pass of model
+        # == Encoder pass of model ==
         # emb_enc: encoded representations of the input images after applying the transformer encoder blocks
         # mask: binary mask (which patches were masked)
         # ids_restore: indices for restoring original order of patches after shuffling for masking
@@ -639,11 +677,11 @@ class MaskedAutoencoderViT(nn.Module):
             imgs, mask_ratio, mask_2d=self.mask_2d
         )
 
-        # Decoder pass of model
+        # == Decoder pass of model ==
         # pred: predicted reconstruction (tensor of same shape as emb_enc)
         pred, _, _ = self.forward_decoder(emb_enc, ids_restore)  # [N, L, p*p*3]
 
-        # Computing reconstruction error
+        # == Reconstruction loss ==
         loss_recon = self.forward_loss(
             imgs, pred, mask, norm_pix_loss=self.norm_pix_loss
         )

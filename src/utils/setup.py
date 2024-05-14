@@ -8,7 +8,8 @@ def setup_wandb(cfg):
     Calls wandb.init() with the provided config.
     """
     # SLURM_JOB_ID is used to group runs in the same job together
-    slurm_job_id = os.getenv("SLURM_JOB_ID", "local")
+    # slurm_job_id = os.getenv("SLURM_ARRAY_JOB_ID", "local")
+    slurm_job_id = "955197"
 
     # Initialize wandb
     wandb.init(

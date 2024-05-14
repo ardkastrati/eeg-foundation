@@ -29,8 +29,11 @@ test-full: ## Run all tests
 train: ## Train the model (on local/calling node)
 	python src/train.py experiment=maxim.yaml
 
+fulltrain:
+	sbatch /home/maxihuber/eeg-foundation/job_scripts/train_slurm/combined_script.slurm
+
 sbatch:
-	sbatch /home/maxihuber/eeg-foundation/slurm/train.slurm
+	sbatch /home/maxihuber/eeg-foundation/job_scripts/train_slurm/train.slurm
 
 gpuserver: ## connect to GPU server cluster
 	srun --time 60 --gres=gpu:1 --pty bash -i
@@ -53,8 +56,26 @@ git:
 # custom:
 # 	srun --time 2:00:00 --gres=gpu:8 --nodelist=tikgpu02 --mem=300G --pty bash -i
 
-# cpu:
-# 	srun --time 60 --gres=gpu:0 --mem=10G --pty bash -i
+ls:
+	ls /scratch/mae
+
+rm:
+	rm -rf /scratch/mae
+
+du:
+	du -sh /scratch/mae
+
+cpu:
+	srun --time 700 --gres=gpu:0 --mem=50G --pty bash -i
+
+cpu2:
+	srun --time 700 --gres=gpu:0 --mem=50G --nodelist=tikgpu05 --pty bash -i
+
+cpu3:
+	srun --time 700 --gres=gpu:0 --mem=10G --nodelist=arton06 --pty bash -i
+
+jupyter:
+	jupyter notebook --no-browser --port 5995 --ip $$(hostname -f)
 
 # gpus: ## connect to GPU server cluster
 # 	srun --time 1:00:00 --gres=gpu:3 --mem=300G --pty bash -i
@@ -92,8 +113,14 @@ symlinks:
 mvtraces:
 	python src/utils/movetraces.py
 
-# overnight:
-# 	sbatch /home/maxihuber/eeg-foundation/slurm/overnight.slurm
+overnight:
+	sbatch /home/maxihuber/eeg-foundation/job_scripts/train_slurm/overnight.slurm
+
+preprocess:
+	sbatch /home/maxihuber/eeg-foundation/src/utils/preprocessing/parallel_preparation.slurm
+
+preload:
+	sbatch /home/maxihuber/eeg-foundation/src/utils/preprocessing/parallel_preloading.slurm
 
 # scraper:
 # 	sbatch /home/maxihuber/eeg-foundation/slurm/scraper.slurm

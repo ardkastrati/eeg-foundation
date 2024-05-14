@@ -6,7 +6,6 @@ import torch
 import wandb
 import csv
 from socket import gethostname
-from pytorch_lightning.loggers import WandbLogger
 import time
 
 
@@ -67,16 +66,16 @@ class ProfilerCallback(Callback):
         Returns:
             bool: True if the test should be profiled, False otherwise.
         """
-        # return False
-        if (
-            # current_epoch < 20
-            current_epoch < 2
-            or (5 <= current_epoch and current_epoch < 10)
-            or current_epoch % self.epoch_freq == 0
-        ):
-            return True
-        else:
-            return False
+        return False
+        # if (
+        #     # current_epoch < 20
+        #     current_epoch < 2
+        #     or (5 <= current_epoch and current_epoch < 10)
+        #     or current_epoch % self.epoch_freq == 0
+        # ):
+        #     return True
+        # else:
+        #     return False
 
     def output_fn(self, profiler, worker_id, epoch):
         """

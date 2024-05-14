@@ -7,12 +7,26 @@ defaults:
   - override /logger: wandb
   - override /debug: profiler_test
 
+callbacks:
+  model_checkpoint:
+    _target_: lightning.pytorch.callbacks.ModelCheckpoint
+    dirpath: "/itet-stor/maxihuber/net_scratch/checkpoints/${oc.env:SLURM_JOB_ID}"
+    filename: "{epoch}-{step}-{val_loss:.2f}"
+    save_top_k: 3
+    verbose: True
+    monitor: 'val_loss'
+    mode: 'min'
+    save_last: True
+
+restore_from_checkpoint: False
+restore_from_checkpoint_path: "/itet-stor/maxihuber/net_scratch/checkpoints/922077/epoch=9-step=930-val_loss=0.19.ckpt"
+
 # configures the training loop
 trainer:
   accelerator: gpu
   strategy: ddp
   min_epochs: 1
-  max_epochs: 31
+  max_epochs: 1
   sync_batchnorm: True
   # log_every_n_steps: 20
   # num_nodes: 2 # now handled automatically inside train.py with environment variable
@@ -20,26 +34,31 @@ trainer:
 
 # specifies how data should be handled during training
 data:
-  data_dir: "/home/maxihuber/eeg-foundation/src/data/000_json"
-  batch_size: 32
-  num_workers : 1
+  data_dir: ["/itet-stor/maxihuber/deepeye_storage/index_files/full_pkl_index.json", "/itet-stor/maxihuber/deepeye_storage/index_files/311G_tueg_index.json"]
+  batch_size: 4
+  num_workers : 2
   pin_memory: True # was not set before (i.e. defaulted to False)
   prefetch_factor: null
-  window_size: 2.0 # window for processing data (in seconds)
-  window_shift: 0.125 # amount to shift the window for each data sample (in seconds)
-  min_duration: 326 # minimum duration of the EDF recording (in seconds)
-  select_sr: [250, 256] # sample rates to select
+  window_size: 1.0 # window for processing data (in seconds)
+  window_shift: 0.0625 # amount to shift the window for each data sample (in seconds)
+  min_duration: 4 # minimum duration of the EDF recording (in seconds)
+  max_duration: 1_000_000
+  chunk_duration: 4 # split signal into 4s chunks
+  select_sr: [] # !!! changed meaning (everything in the list is excluded in preloading.utils.filter_index)
   select_ref: ['AR'] # references to select
-  target_size : [64, 2048]
+  discard_datasets: ["MI_eegmmidb"] # datasets not to include in the training
+  target_size : [64, 64]
   stor_mode: "LOAD"
   runs_dir: /itet-stor/maxihuber/net_scratch/runs
+  path_prefix: "/itet-stor/maxihuber/deepeye_storage/foundation/tueg/edf"
+  STORDIR: "/scratch/mae"
 
 # configures the model and its training parameters
 model:
   img_log_frq: 100 # frequency of logging images (every img_log_frq iterations)
   mask_ratio: 0.15 # masking ratio for embedded patches  (was 0.15)
   net:
-    img_size: [64, 2048]
+    img_size: [64, 64]
     norm_pix_loss: False
   optimizer:
     lr: 0.0002 # learning rate
@@ -48,4 +67,4 @@ model:
 test: False
 
 # metadata for this experiment run
-tags: ["trying-to-make-efficient"]
+tags: ["csv"]
