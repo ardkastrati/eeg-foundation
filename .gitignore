@@ -161,9 +161,11 @@ tmp_STORDIR
 
 # Results
 results/*
+!results/.keep
 
 # Development
 development/*
+!development/.keep
 
 # Checkpoints (WandB & Lightning)
 /eeg-foundation
