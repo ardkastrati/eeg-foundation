@@ -17,7 +17,7 @@ def setup_wandb(cfg):
         entity=cfg.logger.entity,
         group=slurm_job_id,  # Group by SLURM job ID
         job_type=cfg.logger.job_type,
-        dir=f"{cfg.data.runs_dir}/{slurm_job_id}",  # Customize the directory if needed
+        dir=f"{cfg.paths.runs_dir}/{slurm_job_id}",  # Customize the directory if needed
         # offline=cfg.logger.offline,
         mode=cfg.logger.mode,
         # Log hyperparameters

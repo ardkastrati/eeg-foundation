@@ -166,6 +166,10 @@ results/*
 # Development
 development/*
 !development/.keep
+src/utils/batching
+src/utils/plotting
+src/utils/preloading
+src/utils/preprocessing
 
 # Checkpoints (WandB & Lightning)
 /eeg-foundation

@@ -175,8 +175,8 @@ class ProfilerCallback(Callback):
         epoch_train_time = pl_module.epoch_end_time - pl_module.epoch_start_time
 
         # num_samples = number of datapoints passed to a process (per epoch)
-        # the sampler is likely a DistributedSampler because of DDP internals (I made this work for DistributedSampler)
-        num_samples = trainer.train_dataloader.sampler.num_samples
+        # the sampler is likely a DistributedSampler because of DDP internals (I made this work for a custom DistributedSampler)
+        num_samples = trainer.train_dataloader.batch_sampler.num_samples
         throughput = num_samples / epoch_train_time
 
         # Log the epoch training time and throughput
@@ -192,9 +192,9 @@ class ProfilerCallback(Callback):
         #     rank_zero_only=False,
         # )
 
-        pl_module.epoch_train_times.append(
-            (trainer.global_step, current_epoch, epoch_train_time)
-        )
+        # pl_module.epoch_train_times.append(
+        #     (trainer.global_step, current_epoch, epoch_train_time)
+        # )
         # self.log("epoch_throughput", throughput)
         wandb.log(
             {f"epoch_throughput": throughput},
@@ -206,9 +206,9 @@ class ProfilerCallback(Callback):
         #     on_epoch=True,
         #     rank_zero_only=False,
         # )
-        pl_module.epoch_train_throughputs.append(
-            (trainer.global_step, current_epoch, throughput)
-        )
+        # pl_module.epoch_train_throughputs.append(
+        #     (trainer.global_step, current_epoch, throughput)
+        # )
 
         wandb.log(
             {"epoch": current_epoch},

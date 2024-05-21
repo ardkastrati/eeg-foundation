@@ -1,14 +1,15 @@
-from concurrent.futures import ThreadPoolExecutor, as_completed
-import logging
-from math import ceil
 import os
 import sys
 import json
+import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from math import ceil
 
 import mne
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
+import re
 
 
 def filter_index(
@@ -114,11 +115,41 @@ def avg_channel(raw):
     return avg
 
 
+# Add subject ID information for each path
+def get_subject_id(filepath):
+    if filepath.endswith("pkl"):
+        # Regular expression to match the UUID in the middle of the file path
+        match = re.search(
+            r"[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}", filepath
+        )
+        if match:
+            return match.group(0)
+        return None
+    elif filepath.endswith("edf"):
+        parts = filepath.split("/")
+        subject_id = parts[
+            2
+        ]  # The subject ID is the third element after splitting by '/'
+        return subject_id
+    else:
+        assert False, f"invaliv file format for file {filepath}"
+
+
 class load_path_data:
-    def __init__(self):
+    def __init__(self, min_duration, max_duration):
+        self.min_duration = min_duration
+        self.max_duration = max_duration
         logger = logging.getLogger("pyprep")
         logger.setLevel(logging.ERROR)
         mne.set_log_level("WARNING")
+
+    def get_duration(self, index_element):
+        # if index_element["duration"] >= self.max_duration:
+        #     dur = np.inf
+        # else:
+        #     dur = int(index_element["duration"])
+        # return dur
+        return int(index_element["duration"])
 
     def __call__(self, index_element):
         """
@@ -182,6 +213,8 @@ class LocalLoader:
     ):
         self.base_stor_dir = base_stor_dir
         self.num_threads = num_threads
+        self.min_duration = 1
+        self.max_duration = 32
 
         # Create the STORDIR, i.e. the location on the local node where the spectrograms will be stored.
         if not os.path.exists(self.base_stor_dir):
@@ -191,7 +224,7 @@ class LocalLoader:
                 f"The directory {self.base_stor_dir} is not writable. Please check the permissions."
             )
 
-    def load(self, index_chunk, chunk_duration, thread_id):
+    def load(self, index_chunk, thread_id):
 
         num_files_in_subdir = 20_000  # Number of files to store in each subdirectory. (make a method argument)
 
@@ -200,7 +233,10 @@ class LocalLoader:
         subdirs = {}  # List of subdirectories holding the spectrograms.
         print("Storing spectros to (STORDIR): " + self.base_stor_dir, file=sys.stderr)
 
-        p_loader = load_path_data()
+        # TODO: put these parameters into a config file
+        p_loader = load_path_data(
+            min_duration=self.min_duration, max_duration=self.max_duration
+        )
         signal_chunks_index = {}  # Dict of paths to the saved signals & metadata.
         channel_set = set()
 
@@ -209,31 +245,60 @@ class LocalLoader:
         print("Starting to save the spectrograms locally", file=sys.stderr)
         print(f"len index_chunk on {thread_id}:", len(index_chunk), file=sys.stderr)
 
-        for count_processed_elements, index_element in enumerate(index_chunk):
-            channel_data_dict = p_loader(index_element)
+        for num_processed_elements, index_element in enumerate(index_chunk):
+
             sr = index_element["sr"]  # sampling rate
+            dur = p_loader.get_duration(index_element)
+
+            if dur < self.min_duration:
+                continue
+
+            channel_data_dict = p_loader(index_element)
 
             for channel, signal in channel_data_dict.items():
 
                 # Convert to u_volt (micro-volt)
                 signal = signal * 1_000_000
 
-                # Divide signals into chunks of 5s and store them into a list
-                chunks = []
-                # chunk_duration = 4  # duration of each crop in seconds
-                if (
-                    len(signal) >= sr * chunk_duration
-                ):  # Only proceed if signal is at least one chunk long
-                    # Calculate number of full chunks
-                    num_chunks = int(len(signal) // (sr * chunk_duration))
-                    for j in range(num_chunks):
-                        start_idx = int(j * sr * chunk_duration)
-                        end_idx = int(start_idx + sr * chunk_duration)
-                        chunk = signal[start_idx:end_idx]
-                        chunks.append(chunk)
+                # # Divide signals into chunks of 5s and store them into a list
+                # chunks = []
+                # # chunk_duration = 4  # duration of each crop in seconds
+                # if (
+                #     len(signal) >= sr * chunk_duration
+                # ):  # Only proceed if signal is at least one chunk long
+                #     # Calculate number of full chunks
+                #     num_chunks = int(len(signal) // (sr * chunk_duration))
+                #     for j in range(num_chunks):
+                #         start_idx = int(j * sr * chunk_duration)
+                #         end_idx = int(start_idx + sr * chunk_duration)
+                #         chunk = signal[start_idx:end_idx]
+                #         chunks.append(chunk)
+
+                # Cut the signal to the nearest lower integer second:
+                signal = signal[: int(dur * sr)]
+                signal_chunks = [signal]
+                # Further processing if the duration is greater than 32s
+                # if dur == np.inf:
+                #     # TODO: uncomment this part for real pre-loading
+                #     # (I am avoiding a big amount of tueg data for now by just having one 32s signal, instead of 100 per file)
+                #     # # while we have more than 1s of signal left
+                #     # while len(signal) >= 32 * sr:
+                #     #     signal_chunks.append(signal[: 32 * sr])
+                #     #     signal = signal[32 * sr :]
+                #
+                #     # # if we have more than 1s left, add this also
+                #     # if len(signal) >= sr:
+                #     #     signal_chunks.append(signal[: int(len(signal) / sr) * sr])
+                #     signal_chunks = [signal[: int(32 * sr)]]
+                #     print(
+                #         f"Hit the inf case for file {index_element['path']}",
+                #         file=sys.stderr,
+                #     )
+                # else:
+                #     signal_chunks = [signal[: int(dur * sr)]]
 
                 # Store each chunk to self.STORDIR
-                for signal_chunk in chunks:
+                for signal_chunk in signal_chunks:
 
                     # Determine which subdirectory to use.
                     # Calculate index for the file within its subdirectory.
@@ -251,7 +316,7 @@ class LocalLoader:
                             file=sys.stderr,
                         )
                         print(
-                            f"Current progress: {count_processed_elements}/{len(index_chunk)}...",
+                            f"Current progress: {num_processed_elements}/{len(index_chunk)}...",
                             file=sys.stderr,
                         )
 
@@ -266,14 +331,16 @@ class LocalLoader:
                         "path": save_path,
                         "ref": index_element["ref"],
                         "sr": index_element["sr"],
-                        "duration": index_element["duration"],
+                        # change the duration if we use multiple chunks !!
+                        "duration": dur,
                         "channel": channel,
+                        "SubjectID": index_element["SubjectID"],
                     }
 
                     i += 1
 
                 channel_set.add(channel)
-                chunks.clear()  # Clear the list to free memory
+                signal_chunks.clear()  # Clear the list to free memory
                 # == stored all chunks for this channel ==
 
             channel_data_dict.clear()  # Clear the dictionary to free memory
@@ -290,7 +357,7 @@ class LocalLoader:
         with open(path_to_signal_chunks_index, "w") as file:
             json.dump(signal_chunks_index, file)
 
-        return path_to_signal_chunks_index, channel_set
+        return path_to_signal_chunks_index, channel_set, i
 
     def run(self, index, chunk_duration):
         # split the index file into num_threads many groups
@@ -322,4 +389,5 @@ class LocalLoader:
                     print(chunk_path_to_spg_paths)  # Log the completion
                     pbar.update(1)
 
+        return chunk_paths
         return chunk_paths

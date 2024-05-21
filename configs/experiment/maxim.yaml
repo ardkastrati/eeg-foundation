@@ -34,14 +34,14 @@ trainer:
 
 # specifies how data should be handled during training
 data:
-  data_dir: ["/itet-stor/maxihuber/deepeye_storage/index_files/full_pkl_index.json", "/itet-stor/maxihuber/deepeye_storage/index_files/311G_tueg_index.json"]
-  batch_size: 4
-  num_workers : 2
+  data_dir: ["/itet-stor/maxihuber/deepeye_storage/index_files/MI_Limb_4c4fd0f0-a2e7-11ee-b865-001e6744589c_index.json"]
+  batch_size: 10
+  num_workers : 1
   pin_memory: True # was not set before (i.e. defaulted to False)
   prefetch_factor: null
   window_size: 1.0 # window for processing data (in seconds)
   window_shift: 0.0625 # amount to shift the window for each data sample (in seconds)
-  min_duration: 4 # minimum duration of the EDF recording (in seconds)
+  min_duration: 1 # minimum duration of the EDF recording (in seconds)
   max_duration: 1_000_000
   chunk_duration: 4 # split signal into 4s chunks
   select_sr: [] # !!! changed meaning (everything in the list is excluded in preloading.utils.filter_index)

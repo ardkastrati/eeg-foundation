@@ -26,53 +26,57 @@ from pympler import asizeof
 import glob
 
 from src.data.transforms import (
-    crop_spectrogram,
-    load_path_data,
-    load_channel_data,
-    fft_256,
     custom_fft,
-    standardize,
+    crop_spg,
+    normalize_spg,
 )
+
+
+# Dummy dataset
+class RandomDataset(Dataset):
+    def __init__(self, length, target_size=[64, 64]):
+        self.len = length
+        self.target_size = target_size
+
+    def __getitem__(self, index):
+        return torch.randn(1, self.target_size[0], self.target_size[1])
+
+    def __len__(self):
+        return self.len
 
 
 class SimpleDataset(Dataset):
 
-    def __init__(self, paths, sampling_rates, target_size):
+    def __init__(self, paths, sampling_rates):
         self.paths = paths
         self.sampling_rates = sampling_rates
         self.ffts = {}  # we have different STFTs for different sampling rates
-        self.crop = crop_spectrogram(target_size=target_size)
-        self.std = standardize()
 
     def __getitem__(self, idx):
         signal_path = self.paths[idx]
         signal_sr = self.sampling_rates[idx]
         signal_chunk = np.load(signal_path)
         signal_chunk = torch.from_numpy(signal_chunk)
-        # print("signal_chunk.shape", signal_chunk.shape, file=sys.stderr)
-        # print("__getitem__.shape", spg.shape)
 
         if signal_sr not in self.ffts:
             self.ffts[signal_sr] = custom_fft(
                 window_seconds=1,
-                window_shift=0.0625,
+                window_shift=1 / 16,
                 sr=signal_sr,
                 cuda=False,
             )
 
         # == apply transforms to raw signal (on CPU) ==
+
         # Applies STFT, returns spectrogram in DB (Decibel) scale
         spg = self.ffts[signal_sr](signal_chunk)  # Compute the spectrogram using FFT.
-        # print("spg.shape", spg.shape, file=sys.stderr)
         # Crop spectrogram to target_size
-        spg = self.crop(spg)
-        # print("cropped spg.shape", spg.shape, file=sys.stderr)
+        spg = crop_spg(spg)
         # Normalize cropped spectrogram (for model input)
-        spg = self.std(spg)
-        # print("std spg.shape", spg.shape, file=sys.stderr)
+        spg = normalize_spg(spg)
         spg.unsqueeze_(0)
 
-        return spg
+        return spg, signal_sr
 
     def __len__(self):
         return len(self.paths)
@@ -359,72 +363,72 @@ class EDFDataModule(LightningDataModule):
         #         )
         #     )
         # )
-        self.pointer_file_paths = sorted(
-            glob.glob(
-                os.path.join(
-                    f"/itet-stor/maxihuber/net_scratch/runs/{955197}/tmp",
-                    f"index_path_{gethostname()}_*.txt",
-                )
-            )
-        )
-        print(
-            "Collecting data from these files:",
-            self.pointer_file_paths,
-            file=sys.stderr,
-        )
+        # self.pointer_file_paths = [
+        #     "/itet-stor/maxihuber/net_scratch/runs/957186/tmp/index_path_tikgpu10_0.txt"
+        # ]
 
-        paths = {}
-        sampling_rates = {}
-        num_datapoints = 0
+        # print(
+        #     "Collecting data from these files:",
+        #     self.pointer_file_paths,
+        #     file=sys.stderr,
+        # )
 
-        for pointer_file_path in self.pointer_file_paths:
+        # paths = {}
+        # sampling_rates = {}
+        # num_datapoints = 0
 
-            with open(pointer_file_path, "r") as pointer_file:
-                path_to_data_index = pointer_file.read()
+        # for pointer_file_path in self.pointer_file_paths:
 
-                with open(path_to_data_index, "r") as index_file:
-                    chunks_index = json.load(index_file)
+        #     with open(pointer_file_path, "r") as pointer_file:
+        #         path_to_data_index = pointer_file.read()
 
-                    for _, chunk_dict in chunks_index.items():
+        #         with open(path_to_data_index, "r") as index_file:
+        #             chunks_index = json.load(index_file)
 
-                        # paths.append(chunk_dict["path"])
-                        # sampling_rates.append(chunk_dict["sr"])
-                        paths[num_datapoints] = chunk_dict["path"]
-                        sampling_rates[num_datapoints] = chunk_dict["sr"]
-                        num_datapoints += 1
+        #             for _, chunk_dict in chunks_index.items():
 
-                    # print(
-                    #     "num_datapoints so far:",
-                    #     num_datapoints,
-                    #     file=sys.stderr,
-                    # )
-                    # paths_size = asizeof.asizeof(paths)
-                    # print(
-                    #     f"Total size of the paths including elements: {paths_size} bytes",
-                    #     file=sys.stderr,
-                    # )
-                    # sampling_rates_size = asizeof.asizeof(sampling_rates)
-                    # print(
-                    #     f"Total size of the sampling rates including elements: {sampling_rates_size} bytes",
-                    #     file=sys.stderr,
-                    # )
-                    # print(
-                    #     f"RAM memory % used on {gethostname()}:",
-                    #     psutil.virtual_memory()[2],
-                    #     file=sys.stderr,
-                    # )
-                    # print(
-                    #     "RAM Used (GB):",
-                    #     psutil.virtual_memory()[3] / 1_000_000_000,
-                    #     file=sys.stderr,
-                    # )
+        #                 # paths.append(chunk_dict["path"])
+        #                 # sampling_rates.append(chunk_dict["sr"])
+        #                 paths[num_datapoints] = chunk_dict["path"]
+        #                 sampling_rates[num_datapoints] = chunk_dict["sr"]
+        #                 num_datapoints += 1
 
-        # == Initialize Datasets ==
-        entire_dataset = SimpleDataset(
-            paths=paths,
-            sampling_rates=sampling_rates,
-            target_size=self.target_size,
-        )
+        #             # print(
+        #             #     "num_datapoints so far:",
+        #             #     num_datapoints,
+        #             #     file=sys.stderr,
+        #             # )
+        #             # paths_size = asizeof.asizeof(paths)
+        #             # print(
+        #             #     f"Total size of the paths including elements: {paths_size} bytes",
+        #             #     file=sys.stderr,
+        #             # )
+        #             # sampling_rates_size = asizeof.asizeof(sampling_rates)
+        #             # print(
+        #             #     f"Total size of the sampling rates including elements: {sampling_rates_size} bytes",
+        #             #     file=sys.stderr,
+        #             # )
+        #             # print(
+        #             #     f"RAM memory % used on {gethostname()}:",
+        #             #     psutil.virtual_memory()[2],
+        #             #     file=sys.stderr,
+        #             # )
+        #             # print(
+        #             #     "RAM Used (GB):",
+        #             #     psutil.virtual_memory()[3] / 1_000_000_000,
+        #             #     file=sys.stderr,
+        #             # )
+
+        # # == Initialize Datasets ==
+        # entire_dataset = SimpleDataset(
+        #     paths=paths,
+        #     sampling_rates=sampling_rates,
+        #     # target_size=self.target_size,
+        # )
+        # TODO: remove afterwards
+        entire_dataset = RandomDataset(100_000, [96, 112])
+
+        # TODO: continue here
         print("After dataset creation", file=sys.stderr)
 
         # for i in range(len(entire_dataset)):
@@ -455,18 +459,61 @@ class EDFDataModule(LightningDataModule):
 
         # assert False, "break after setup"
 
+    def goofy_crop(self, spg, sr, target_size):
+        spg = spg[:, : target_size[0], : target_size[1]]
+        return spg, sr
+
+    def custom_collate_fn(self, batch):
+        print("=" * 5 + " entering collate_fn " + "=" * 80, file=sys.stderr)
+
+        # max/min height and width of spectrograms within this batch
+        max_y, max_x = max([spg.shape[1] for spg, _ in batch]), max(
+            [spg.shape[2] for spg, _ in batch]
+        )
+        min_y, min_x = min([spg.shape[1] for spg, _ in batch]), min(
+            [spg.shape[2] for spg, _ in batch]
+        )
+
+        print(f"max_y: {max_y}, max_x: {max_x}", file=sys.stderr)
+        print(f"min_y: {min_y}, min_x: {min_x}", file=sys.stderr)
+
+        # plot_batch_spgs(batch)
+
+        processed_samples = []
+        for spg, sr in batch:
+            # print(spg.shape)
+            sample = self.goofy_crop(spg, sr, [min_y, min_x])
+            # print(sample[0].shape)
+            processed_samples.append(sample)
+
+        # plot the batch here
+        # print("=" * 100)
+        # plot_batch_spgs(processed_samples)
+
+        # we can discard the sr information after having collated the samples
+        processed_samples = [spg for spg, sr in processed_samples]
+        num_patches = sum(
+            [spg.shape[1] // 16 * spg.shape[2] // 16 for spg in processed_samples]
+        )
+        print("num_patches:", num_patches, file=sys.stderr)
+
+        print("=" * 5 + " exiting collate_fn " + "=" * 80, file=sys.stderr)
+
+        return torch.stack(processed_samples)
+
+    def rand_collate_fn(self, batch):
+        stacked = torch.stack(batch)
+        print("batch.shape", stacked.shape)
+        return stacked
+
     def train_dataloader(self):
-
-        # Handle variable lengths (x-axis) of spectrograms
-        def custom_collate_fn(batch):
-            return torch.stack(batch)
-
         return DataLoader(
             self.train_dataset,
-            shuffle=True,  # apparently, it is not advised to set shuffle=True because Lightning will do it for us in distributed setting, TODO: look into it later
             batch_size=self.batch_size,
+            collate_fn=self.rand_collate_fn,
             num_workers=self.num_workers,
             pin_memory=self.pin_memory,
+            shuffle=True,  # apparently, it is not advised to set shuffle=True because Lightning will do it for us in distributed setting, TODO: look into it later
             prefetch_factor=self.prefetch_factor,
         )
 
@@ -474,6 +521,7 @@ class EDFDataModule(LightningDataModule):
         return DataLoader(
             self.val_dataset,
             batch_size=self.batch_size,
+            collate_fn=self.rand_collate_fn,
             num_workers=self.num_workers,
             pin_memory=self.pin_memory,
             prefetch_factor=self.prefetch_factor,

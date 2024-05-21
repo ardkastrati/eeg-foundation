@@ -90,7 +90,7 @@ def main(data_config, num_chunks, idx):
     for dir_idx, chunks in enumerate(num_chunks_per_directory):
         # Compute the size of a chunk for this directory
         # (e.g. 1'000 files per tueg worker, 20'000 files per pkl worker)
-        chunk_size = ceil(index_lens[dir_idx] / chunks)
+        chunk_size = ceil(index_lens[dir_idx] / max(1, chunks))
         for chunk_idx in range(chunks):
             chunk_start = start_idx + chunk_idx * chunk_size
             chunk_end = min(chunk_start + chunk_size, start_idx + index_lens[dir_idx])
@@ -115,9 +115,13 @@ def main(data_config, num_chunks, idx):
             print(f"Worker {num_worker} has no files to process.", file=sys.stderr)
         processed += len(index_chunk)
 
-    # Process the index_chunk for this idx...
-    index_chunk = global_index_chunks[idx] if idx < len(global_index_chunks) else []
-
+    # This if-else here is not the best. I just need it quickly now because the script breaks if we have only 1 worker.
+    # TODO: change this to a more elegant solution later
+    if num_chunks > 1:
+        # Process the index_chunk for this idx...
+        index_chunk = global_index_chunks[idx] if idx < len(global_index_chunks) else []
+    else:
+        index_chunk = index
     # (Add your processing logic here)
 
     # chunk_path is a path to a json file, which in turn is of the form
@@ -127,14 +131,14 @@ def main(data_config, num_chunks, idx):
     #  1: {...},
     #  ...}
     # channel_set holds all channel names that were present in the index_chunk on this process
-    path_to_signal_chunks_index, channel_set = local_loader.load(
+    path_to_signal_chunks_index, channel_set, nr_files = local_loader.load(
         index_chunk=index_chunk,
-        chunk_duration=data_config["chunk_duration"],
         thread_id=idx,
     )
 
     print(
-        f"Signals at {path_to_signal_chunks_index} on process {idx}.", file=sys.stderr
+        f"Saved {nr_files} signals at {path_to_signal_chunks_index} on process {idx}.",
+        file=sys.stderr,
     )
 
     # we store this list into a json file in the TMPDIR,
@@ -145,9 +149,10 @@ def main(data_config, num_chunks, idx):
         file.write(path_to_signal_chunks_index)
 
     # Also store the channels that are present in the data on this process
-    # -> we need that for the channel embeddings in the network afterwards
+    # -> we need that for the cls_token_map in the network afterwards
     with open(
-        os.path.join(TMPDIR, f"channel_set_{gethostname()}_{idx}.txt"), "w"
+        os.path.join(data_config["STORDIR"], f"channel_set_{gethostname()}_{idx}.txt"),
+        "w",
     ) as file:
         json.dump(list(channel_set), file)
 
