@@ -10,13 +10,13 @@ import yaml
 from utils import LocalLoader, filter_index
 
 
-def main(data_config, num_chunks, idx):
+def main(config, num_chunks, idx):
 
     print("Starting process", idx, file=sys.stderr)
 
     ## TODO implement wandb.log(data_preparation_time) here
 
-    TMPDIR = f"{data_config['runs_dir']}/{os.environ['SLURM_ARRAY_JOB_ID']}/tmp"
+    TMPDIR = f"{config['runs_dir']}/{os.environ['SLURM_ARRAY_JOB_ID']}/tmp"
     os.makedirs(TMPDIR, exist_ok=True)
 
     """
@@ -55,17 +55,22 @@ def main(data_config, num_chunks, idx):
     """
 
     local_loader = LocalLoader(
-        base_stor_dir=data_config["STORDIR"],
+        min_duration=config["min_duration"],
+        max_duration=config["max_duration"],
+        patch_size=config["patch_size"],
+        max_nr_patches=config["max_nr_patches"] - 500,
+        win_shifts=config["win_shifts"],
+        win_shift_factor=config["win_shift_factor"],
+        base_stor_dir=config["STORDIR"],
     )
 
     index, index_lens, index_sizes = filter_index(
-        index_paths=data_config["data_dir"],
-        path_prefix=data_config["path_prefix"],
-        min_duration=data_config["min_duration"],
-        max_duration=data_config["max_duration"],
-        select_sr=data_config["select_sr"],
-        select_ref=data_config["select_ref"],
-        discard_datasets=data_config["discard_datasets"],
+        index_paths=config["source_indices"],
+        path_prefix=config["path_prefix"],
+        min_duration=config["min_duration"],
+        max_duration=config["max_duration"],
+        discard_sr=config["discard_sr"],
+        discard_datasets=config["discard_datasets"],
     )
 
     # Calculate total size for normalization
@@ -131,6 +136,7 @@ def main(data_config, num_chunks, idx):
     #  1: {...},
     #  ...}
     # channel_set holds all channel names that were present in the index_chunk on this process
+
     path_to_signal_chunks_index, channel_set, nr_files = local_loader.load(
         index_chunk=index_chunk,
         thread_id=idx,
@@ -151,7 +157,7 @@ def main(data_config, num_chunks, idx):
     # Also store the channels that are present in the data on this process
     # -> we need that for the cls_token_map in the network afterwards
     with open(
-        os.path.join(data_config["STORDIR"], f"channel_set_{gethostname()}_{idx}.txt"),
+        os.path.join(config["STORDIR"], f"channel_set_{gethostname()}_{idx}.txt"),
         "w",
     ) as file:
         json.dump(list(channel_set), file)
@@ -164,9 +170,8 @@ if __name__ == "__main__":
     idx = int(sys.argv[2])
 
     # Load main config file
-    main_config_file = "/home/maxihuber/eeg-foundation/configs/experiment/maxim.yaml"
+    main_config_file = "/home/maxihuber/eeg-foundation/configs/experiment/pre_load.yaml"
     with open(main_config_file, "r") as file:
         config = yaml.safe_load(file)
-        data_config = config["data"]
 
-    main(data_config, num_chunks, idx)
+    main(config, num_chunks, idx)

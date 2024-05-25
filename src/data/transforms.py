@@ -229,7 +229,8 @@ def normalize_spg(spg):
     normalized_spg = spg[:, :] / freq_means
     # Transform to decibel-scale
     db_spg = 10 * torch.log10(normalized_spg)
-    return db_spg
+    db_means = 10 * torch.log10(freq_means)
+    return db_spg, db_means
 
 
 def plot_spg(spg, sr, dur):

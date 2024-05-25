@@ -1,9 +1,55 @@
+import sys
 import numpy as np
 import torch
 from torch.utils.data import Dataset
 
 
-# == Initialize Datasets ==
+# == Define Datasets ==
+
+
+class ChannelDataset(Dataset):
+    def __init__(self, channel_index):
+        self.channel_index = channel_index
+
+    def __getitem__(self, idx):
+        channel_info = self.channel_index[idx]
+        signal = np.load(channel_info["path"])
+        return {
+            "signal": torch.tensor(signal),
+            "path": channel_info["path"],
+            "channel": channel_info["channel"],
+            "sr": channel_info["sr"],
+            "dur": channel_info["dur"],
+        }
+
+    def __len__(self):
+        return len(self.channel_index)
+
+
+class TrialDataset(Dataset):
+    def __init__(self, trial_index):
+        self.trial_index = trial_index
+        self.win_sizes = [-1] * len(trial_index)
+
+    def __getitem__(self, trial_idx):
+        trial_info = self.trial_index[trial_idx]
+        win_size = self.win_sizes[trial_idx]
+
+        channels = []
+        signals = []
+
+        for chn, path in zip(trial_info["channels"], trial_info["paths"]):
+            signal = np.load(path)
+            signal = torch.tensor(signal)
+            signals.append(signal)
+            channels.append(chn)
+
+        return (signals, channels, win_size, trial_info["sr"], trial_info["dur"])
+
+    def __len__(self):
+        return len(self.trial_index)
+
+
 class PathDataset(Dataset):
     def __init__(self, signal_index):
         self.signal_index = signal_index
@@ -16,7 +62,7 @@ class PathDataset(Dataset):
         )
 
     def __getitem__(self, info):
-        print(info)
+        # print(info)
         idx, sr, dur, time_used = info
         # print(dur)
         signal_path = self.paths[idx]
@@ -25,7 +71,7 @@ class PathDataset(Dataset):
         end_sample = start_sample + int(sr * dur)
         signal_chunk = signal[start_sample:end_sample]
         chn = self.channels[idx]
-        return (torch.tensor(signal_chunk), sr, chn)
+        return (torch.tensor(signal_chunk), chn, sr, dur)
 
     def __len__(self):
         return self.len

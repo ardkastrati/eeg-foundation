@@ -122,7 +122,7 @@ class RoPEAttention(Attention):
 
     def forward(self, x, freqs_cis):
         B, N, C = x.shape
-        # print("RoPEAttention.forward:", B, N, C, freqs_cis.shape)
+
         qkv = (
             self.qkv(x)
             .reshape(B, N, 3, self.num_heads, C // self.num_heads)
@@ -133,11 +133,40 @@ class RoPEAttention(Attention):
         q[:, :, 1:], k[:, :, 1:] = apply_rotary_emb(
             q[:, :, 1:], k[:, :, 1:], freqs_cis=freqs_cis
         )
-        # print(f"q shape: {q.shape}, dtype: {q.dtype}")
-        # print(f"k shape: {k.shape}, dtype: {k.dtype}")
-        # print(
-        #     f"self.scale: {self.scale}, type: {type(self.scale)}, dtype: {getattr(self.scale, 'dtype', 'N/A')}"
-        # )
+        attn = (q * self.scale) @ k.transpose(-2, -1)
+        attn = attn.softmax(dim=-1)
+        attn = self.attn_drop(attn)
+
+        x = (attn @ v).transpose(1, 2).reshape(B, N, C)
+        x = self.proj(x)
+        x = self.proj_drop(x)
+
+        return x
+
+
+class FlexibleRoPEAttention(Attention):
+    """
+    Multi-head Attention block with rotary position embeddings.
+
+    Adjusted the RoPEAttention class to work with a variable number of prepended tokens,
+    e.g. one cls token and multiple mean tokens.
+
+    They are not taken into consideration when applying the rotary position embeddings.
+    """
+
+    def forward(self, x, freqs_cis, nr_meta_tokens=1):
+        B, N, C = x.shape
+
+        qkv = (
+            self.qkv(x)
+            .reshape(B, N, 3, self.num_heads, C // self.num_heads)
+            .permute(2, 0, 3, 1, 4)
+        )
+        q, k, v = qkv[0], qkv[1], qkv[2]
+
+        q[:, :, nr_meta_tokens:], k[:, :, nr_meta_tokens:] = apply_rotary_emb(
+            q[:, :, nr_meta_tokens:], k[:, :, nr_meta_tokens:], freqs_cis=freqs_cis
+        )
         attn = (q * self.scale) @ k.transpose(-2, -1)
         attn = attn.softmax(dim=-1)
         attn = self.attn_drop(attn)
@@ -159,6 +188,28 @@ class RoPE_Layer_scale_init_Block(Layer_scale_init_Block):
     def forward(self, x, freqs_cis):
         x = x + self.drop_path(
             self.gamma_1 * self.attn(self.norm1(x), freqs_cis=freqs_cis)
+        )
+        x = x + self.drop_path(self.gamma_2 * self.mlp(self.norm2(x)))
+
+        return x
+
+
+class Flexible_RoPE_Layer_scale_init_Block(Layer_scale_init_Block):
+    # taken from https://github.com/rwightman/pytorch-image-models/blob/master/timm/models/vision_transformer.py
+    # with slight modifications
+
+    # Adjusted to work with FlexibleRoPEAttention.
+
+    def __init__(self, *args, **kwargs):
+        kwargs["Attention_block"] = FlexibleRoPEAttention
+        super().__init__(*args, **kwargs)
+
+    def forward(self, x, freqs_cis, nr_meta_tokens=1):
+        x = x + self.drop_path(
+            self.gamma_1
+            * self.attn(
+                self.norm1(x), freqs_cis=freqs_cis, nr_meta_tokens=nr_meta_tokens
+            )
         )
         x = x + self.drop_path(self.gamma_2 * self.mlp(self.norm2(x)))
 

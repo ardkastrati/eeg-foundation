@@ -34,7 +34,7 @@ trainer:
 
 # specifies how data should be handled during training
 data:
-  data_dir: ["/itet-stor/maxihuber/deepeye_storage/index_files/MI_Limb_4c4fd0f0-a2e7-11ee-b865-001e6744589c_index.json"]
+  data_dir: ["/itet-stor/maxihuber/deepeye_storage/index_files/full_pkl_index.json"]
   batch_size: 10
   num_workers : 1
   pin_memory: True # was not set before (i.e. defaulted to False)
@@ -46,7 +46,7 @@ data:
   chunk_duration: 4 # split signal into 4s chunks
   select_sr: [] # !!! changed meaning (everything in the list is excluded in preloading.utils.filter_index)
   select_ref: ['AR'] # references to select
-  discard_datasets: ["MI_eegmmidb"] # datasets not to include in the training
+  discard_datasets: [""] # datasets not to include in the training
   target_size : [64, 64]
   stor_mode: "LOAD"
   runs_dir: /itet-stor/maxihuber/net_scratch/runs

@@ -20,7 +20,6 @@ class MAEModuleRoPE(LightningModule):
         val_log_frq_loss=50,
         val_log_frq_imgs=100,
     ):
-        print("Initialize MAEModuleRoPE\n=====================")
         super().__init__()
 
         self.net = net

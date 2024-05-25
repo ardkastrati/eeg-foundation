@@ -166,10 +166,12 @@ results/*
 # Development
 development/*
 !development/.keep
-src/utils/batching
+src/utils/batching/*
+!src/utils/batching/Batching.ipynb
 src/utils/plotting
-src/utils/preloading
-src/utils/preprocessing
+src/utils/preprocessing/Preprocessing.ipynb
+src/utils/preprocessing/PreprocessingFromArd.ipynb
+src/utils/preloading/Preloading.ipynb
 
 # Checkpoints (WandB & Lightning)
 /eeg-foundation

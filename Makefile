@@ -72,7 +72,7 @@ cpu:
 	srun --time 700 --gres=gpu:0 --mem=50G --pty bash -i
 
 cpu2:
-	srun --time 700 --gres=gpu:0 --mem=50G --nodelist=tikgpu05 --pty bash -i
+	srun --time 700 --gres=gpu:0 --mem=50G --nodelist=tikgpu08 --pty bash -i
 
 cpu10:
 	srun --time 500 --gres=gpu:0 --mem=50G --nodelist=tikgpu10 --pty bash -i
@@ -81,7 +81,7 @@ gpu10:
 	srun --time 500 --gres=gpu:1 --mem=50G --nodelist=tikgpu10 --pty bash -i
 
 jupyter:
-	jupyter notebook --no-browser --port 5990 --ip $$(hostname -f)
+	jupyter notebook --no-browser --port 5991 --ip $$(hostname -f)
 
 env:
 	conda activate fastenv

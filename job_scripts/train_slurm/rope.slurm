@@ -5,8 +5,8 @@
 #SBATCH --error=/itet-stor/maxihuber/net_scratch/runs/%j/train_%j.err
 #SBATCH --open-mode=append
 #SBATCH --nodes=1
-#SBATCH --gres=gpu:1
-#SBATCH --ntasks-per-node=1
+#SBATCH --gres=gpu:2
+#SBATCH --ntasks-per-node=2
 #SBATCH --cpus-per-task=2
 #SBATCH --mem=50G
 #SBATCH --time=03:00:00
