@@ -72,18 +72,6 @@ def create_raw(
     sr,
     ch_names2=None,
 ):
-    """
-    Create a raw MNE object from EEG data.
-
-    Parameters:
-        data (pandas.DataFrame): The EEG data.
-        ch_names1 (list): The channel names for the EEG data.
-        sr (float): The sampling rate of the EEG data.
-        ch_names2 (list, optional): The channel names for the MNE object. If not provided, it defaults to ch_names1.
-
-    Returns:
-        raw (mne.io.RawArray): The raw MNE object.
-    """
     if ch_names2 == None:
         ch_names2 = ch_names1
     ch_types = ["eeg" for _ in range(len(ch_names1))]
@@ -96,15 +84,6 @@ def create_raw(
 
 
 def avg_channel(raw):
-    """
-    Applies average referencing to the given raw data.
-
-    Parameters:
-        raw (Raw): The raw data to be processed.
-
-    Returns:
-        Raw: The raw data with average referencing applied.
-    """
     avg = raw.copy().add_reference_channels(ref_channels="AVG_REF")
     avg = avg.set_eeg_reference(ref_channels="average")
     return avg
@@ -199,12 +178,51 @@ class load_path_data:
         return channel_data_dict
 
 
+# class load_path_data:
+#     def __init__(self, min_duration, max_duration):
+#         self.min_duration = min_duration
+#         self.max_duration = max_duration
+#         logger = logging.getLogger("pyprep")
+#         logger.setLevel(logging.ERROR)
+#         mne.set_log_level("WARNING")
+
+#     def __call__(self, index_element):
+
+#         if index_element["path"].endswith(".edf"):
+#             # For EDF: all channels are good at the moment
+#             eeg_data = mne.io.read_raw_edf(
+#                 index_element["path"],
+#                 include=index_element["channels"],
+#                 preload=True,
+#             )
+
+#         elif index_element["path"].endswith("pkl"):
+#             # Load DataFrame from pickle
+#             with open(index_element["path"], "rb") as file:
+#                 df = pd.read_pickle(file)
+#                 # Create a mne.Raw to be compatible with the coming processing steps
+#                 eeg_data = create_raw(
+#                     data=df,
+#                     ch_names1=index_element["good_channels"],
+#                     sr=index_element["sr"],
+#                 )
+
+#         else:
+#             assert False, "Invalid path"
+
+#         # Add average reference
+#         eeg_data = avg_channel(eeg_data)
+
+#         return eeg_data
+
+
 class LocalLoader:
     def __init__(
         self,
         min_duration=1,
+        max_duration=1_000_000,
         patch_size=16,
-        max_nr_patches=8_500,
+        max_nr_patches=7_500,
         win_shifts=[0.25, 0.5, 1, 2, 4, 8],
         win_shift_factor=0.25,
         num_threads=1,
@@ -212,6 +230,7 @@ class LocalLoader:
     ):
 
         self.min_duration = min_duration
+        self.max_duration = max_duration
         self.patch_size = patch_size
         self.max_nr_patches = max_nr_patches
         self.win_shifts = win_shifts
@@ -299,7 +318,7 @@ class LocalLoader:
                 "channels": [],
                 "paths": [],
                 "sr": sr,
-                "dur": dur,
+                "durs": [],
                 "ref": index_element["ref"],
                 "Dataset": index_element["Dataset"],
                 "SubjectID": index_element["SubjectID"],
@@ -312,8 +331,11 @@ class LocalLoader:
                 channel_signal = channel_signal * 1_000_000
 
                 # Find maximum duration which does not nuke CUDA memory
+                dur = len(channel_signal) / index_element["sr"]
                 patches = self.get_max_nr_patches(sr, dur)
+
                 if patches > self.max_nr_patches:
+                    print(f"Chopping signal of length {dur}, patches {patches}.")
                     # Split channel_signal 1-d tensor into chunks of max_dur duration
                     # Did some arithmetic to get the formula right, it's just nr_x_patches * nr_y_patches
                     #  rearranged for duration, and we iterate over the full win_shift space
@@ -334,15 +356,27 @@ class LocalLoader:
                         )
                     ]
                     max_dur = min(max_durs)
+                    assert (
+                        self.get_max_nr_patches(sr, max_dur) <= self.max_nr_patches
+                    ), "max_nr_patches exceeded"
                     jump = int(sr * max_dur)
                     signal_chunks = [
                         channel_signal[i : i + jump]
                         for i in range(0, len(channel_signal), jump)
                     ]
+                    durs = [int(len(chunk) / sr) for chunk in signal_chunks]
+                    print(durs)
                 else:
                     signal_chunks = [channel_signal]
+                    durs = [dur]
 
-                for signal in signal_chunks:
+                for signal, dur in zip(signal_chunks, durs):
+
+                    if dur < self.min_duration or dur > self.max_duration:
+                        continue
+
+                    if abs(int(len(signal) - sr * dur)) > 2:
+                        print(index_element["path"])
 
                     # Determine which subdirectory to use.
                     # Calculate index for the file within its subdirectory.
@@ -381,9 +415,9 @@ class LocalLoader:
                     # Store the path to the signal and some metadata.
                     trial_info["channels"].append(channel)
                     trial_info["paths"].append(save_path)
+                    trial_info["durs"].append(dur)
 
             # == stored data for all channels to different files
-
             trial_index[num_trials] = trial_info
             num_trials += 1
             # == stored everything for this index_element (trial) ==

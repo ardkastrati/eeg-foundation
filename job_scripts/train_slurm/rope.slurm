@@ -4,12 +4,12 @@
 #SBATCH --output=/itet-stor/maxihuber/net_scratch/runs/%j/train_%j.out
 #SBATCH --error=/itet-stor/maxihuber/net_scratch/runs/%j/train_%j.err
 #SBATCH --open-mode=append
+#SBATCH --job-name=pretrain
 #SBATCH --nodes=1
-#SBATCH --gres=gpu:2
-#SBATCH --ntasks-per-node=2
-#SBATCH --cpus-per-task=2
-#SBATCH --mem=50G
-#SBATCH --time=03:00:00
+#SBATCH --gres=gpu:6
+#SBATCH --ntasks-per-node=6
+#SBATCH --cpus-per-task=10
+#SBATCH --mem=200G
 #SBATCH --nodelist=tikgpu10
 
 # Create directories for job

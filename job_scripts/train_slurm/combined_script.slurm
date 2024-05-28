@@ -3,11 +3,12 @@
 #SBATCH --mail-type=ALL                 # Mail configuration: NONE, BEGIN, END, FAIL, REQUEUE, ALL
 #SBATCH --output=/itet-stor/maxihuber/net_scratch/runs/%A/preloading/%A_%a.out
 #SBATCH --error=/itet-stor/maxihuber/net_scratch/runs/%A/preloading/%A_%a.err
-#SBATCH --job-name=load-and-train       # Combined job name
-#SBATCH --array=5-5                     # Creates 5 jobs for preloading
+#SBATCH --job-name=preload              # Combined job name
+#SBATCH --array=0-2                     # Creates 5 jobs for preloading
 #SBATCH --nodes=1                       # All tasks on one node for preloading
-#SBATCH --mem=100G                      # Memory per array job
-#SBATCH --nodelist=tikgpu02             # Node selection for preloading
+#SBATCH --mem=200G                      # Memory per array job
+#SBATCH --time=24:00:00                 # Time limit for each array job
+#SBATCH --nodelist=tikgpu10             # Node selection for preloading
 
 # Create directory for job
 mkdir -p /itet-stor/maxihuber/net_scratch/runs/$SLURM_ARRAY_JOB_ID

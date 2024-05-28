@@ -152,25 +152,6 @@ class ProfilerCallback(Callback):
             pl_module.profiler.stop()
             print("Ended profiling")
 
-        # Log losses
-        # Log the losses for the current epoch
-        # current_epoch = trainer.current_epoch
-        # for global_step, epoch, batch_idx, loss in pl_module.train_losses[
-        #     current_epoch
-        # ]:
-        #     wandb.log({f"train_loss": loss}, step=global_step)
-        # might want to log with step=current_epoch...
-
-        # Compute and log the average loss for the current epoch
-        # if len(pl_module.train_losses[current_epoch]) > 0:
-        #     losses = [loss for _, _, _, loss in pl_module.train_losses[current_epoch]]
-        #     avg_loss = sum(losses) / len(losses)
-        #     wandb.log(
-        #         {f"average_train_loss": avg_loss},
-        #         step=trainer.global_step,
-        #         commit=False,
-        #     )
-
         # Compute performance metrics
         epoch_train_time = pl_module.epoch_end_time - pl_module.epoch_start_time
 
@@ -185,33 +166,9 @@ class ProfilerCallback(Callback):
             {f"epoch_train_time": epoch_train_time},
             step=trainer.global_step,
         )
-        # self.log(
-        #     name="epoch_train_time",
-        #     value=epoch_train_time,
-        #     on_epoch=True,
-        #     rank_zero_only=False,
-        # )
 
-        # pl_module.epoch_train_times.append(
-        #     (trainer.global_step, current_epoch, epoch_train_time)
-        # )
-        # self.log("epoch_throughput", throughput)
         wandb.log(
             {f"epoch_throughput": throughput},
-            step=trainer.global_step,
-        )
-        # self.log(
-        #     name="epoch_throughput",
-        #     value=throughput,
-        #     on_epoch=True,
-        #     rank_zero_only=False,
-        # )
-        # pl_module.epoch_train_throughputs.append(
-        #     (trainer.global_step, current_epoch, throughput)
-        # )
-
-        wandb.log(
-            {"epoch": current_epoch},
             step=trainer.global_step,
         )
 
@@ -270,108 +227,7 @@ class ProfilerCallback(Callback):
         )
 
         print("Finished training. Now outputting performance metrics...")
-
-        ########################################
-        # Write total_train_time to a file
-        # with open(
-        #     f"{self.run_dir}/metrics/total_train_time_{trainer.global_rank}_{pl_module.hostname}.txt",
-        #     "w",
-        # ) as f:
-        #     f.write(str(pl_module.total_train_time))
-        # trainer.logger.experiment.log({"total_train_time": pl_module.total_train_time})
-        # wandb.log(
-        #     {f"total_train_time": pl_module.total_train_time},
-        #     step=trainer.global_step,
-        # )
-        # Also log the total_train_time to wandb
-        # if trainer.logger is not None:
-        #     trainer.logger.log_metrics(
-        #         {"total_train_time": pl_module.total_train_time},
-        #         step=trainer.global_step,
-        #     )
-        ########################################
-        # Write epoch_train_times to a CSV file
-        # with open(
-        #     f"{self.run_dir}/metrics/train_times_{trainer.global_rank}_{pl_module.hostname}.csv",
-        #     "w",
-        #     newline="",
-        # ) as f:
-        #     writer = csv.writer(f)
-        #     writer.writerow(["Global_Step", "Epoch", "Time"])
-        #     writer.writerows(pl_module.epoch_train_times)
-        # Also log the epoch_train_times to wandb
-        # if trainer.logger is not None:
-        #     for global_step, _, t in pl_module.epoch_train_times:
-        #         trainer.logger.log_metrics({"epoch_train_time": t}, step=global_step)
-        ########################################
-        # Write epoch_train_throughputs to a CSV file
-        # with open(
-        #     f"{self.run_dir}/metrics/train_throughputs_{trainer.global_rank}_{pl_module.hostname}.csv",
-        #     "w",
-        #     newline="",
-        # ) as f:
-        #     writer = csv.writer(f)
-        #     writer.writerow(["Global_Step", "Epoch", "Throughput"])
-        #     writer.writerows(pl_module.epoch_train_throughputs)
-        # Also log the epoch_train_throughputs to wandb
-        # if trainer.logger is not None:
-        #     for global_step, _, throughput in pl_module.epoch_train_throughputs:
-        #         trainer.logger.log_metrics(
-        #             {"epoch_throughput": throughput}, step=global_step
-        #         )
-        ########################################
-        # Log the train_losses
-        # with open(
-        #     f"{self.run_dir}/metrics/train_losses_{trainer.global_rank}_{pl_module.hostname}.csv",
-        #     "w",
-        #     newline="",
-        # ) as f:
-        #     writer = csv.writer(f)
-        #     writer.writerow(["Global_Step", "Epoch", "Batch_Idx", "Loss"])
-        #     writer.writerows(pl_module.train_losses)
-
-        # Adjusted code for train_losses
-        # with open(
-        #     f"{self.run_dir}/metrics/train_losses_{trainer.global_rank}_{pl_module.hostname}.csv",
-        #     "w",
-        #     newline="",
-        # ) as f:
-        #     writer = csv.writer(f)
-        #     writer.writerow(["Global_Step", "Epoch", "Batch_Idx", "Loss"])
-        #     for _, epoch_losses in enumerate(pl_module.train_losses):
-        #         for global_step, epoch, batch_idx, loss in epoch_losses:
-        #             writer.writerow([global_step, epoch, batch_idx, loss])
-        # Also log the train_losses to wandb
-        # if trainer.logger is not None:
-        #     for global_step, _, _, loss in pl_module.train_losses:
-        #         trainer.logger.log_metrics({"train_loss": loss}, step=global_step)
-        ########################################
-        # Log the val_losses
-        # with open(
-        #     f"{self.run_dir}/metrics/val_losses_{trainer.global_rank}_{pl_module.hostname}.csv",
-        #     "w",
-        #     newline="",
-        # ) as f:
-        #     writer = csv.writer(f)
-        #     writer.writerow(["Global_Step", "Epoch", "Batch_Idx", "Loss"])
-        #     writer.writerows(pl_module.val_losses)
-        # with open(
-        #     f"{self.run_dir}/metrics/val_losses_{trainer.global_rank}_{pl_module.hostname}.csv",
-        #     "w",
-        #     newline="",
-        # ) as f:
-        #     writer = csv.writer(f)
-        #     writer.writerow(["Global_Step", "Epoch", "Batch_Idx", "Loss"])
-        #     for _, epoch_losses in enumerate(pl_module.val_losses):
-        #         for global_step, epoch, batch_idx, loss in epoch_losses:
-        #             writer.writerow([global_step, epoch, batch_idx, loss])
-        # Also log the val_losses to wandb
-        # if trainer.logger is not None:
-        #     for global_step, _, _, loss in pl_module.val_losses:
-        #         trainer.logger.log_metrics({"val_loss": loss}, step=global_step)
-        ########################################
-        # if trainer.logger is not None:
-        #     trainer.logger.finalize("success")
+        print(f"Total training time: {pl_module.total_train_time}")
         print("Finished training")
         wandb.finish()
         print("Closed the wandb logger")

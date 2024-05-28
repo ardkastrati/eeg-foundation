@@ -14,9 +14,9 @@ def main(config, num_chunks, idx):
 
     print("Starting process", idx, file=sys.stderr)
 
-    ## TODO implement wandb.log(data_preparation_time) here
+    job_id = os.environ["SLURM_JOB_ID"] or os.environ["SLURM_ARRAY_JOB_ID"]
 
-    TMPDIR = f"{config['runs_dir']}/{os.environ['SLURM_ARRAY_JOB_ID']}/tmp"
+    TMPDIR = f"{config['runs_dir']}/{job_id}/tmp"
     os.makedirs(TMPDIR, exist_ok=True)
 
     """
@@ -58,7 +58,7 @@ def main(config, num_chunks, idx):
         min_duration=config["min_duration"],
         max_duration=config["max_duration"],
         patch_size=config["patch_size"],
-        max_nr_patches=config["max_nr_patches"] - 500,
+        max_nr_patches=config["max_nr_patches"],
         win_shifts=config["win_shifts"],
         win_shift_factor=config["win_shift_factor"],
         base_stor_dir=config["STORDIR"],
@@ -120,11 +120,14 @@ def main(config, num_chunks, idx):
             print(f"Worker {num_worker} has no files to process.", file=sys.stderr)
         processed += len(index_chunk)
 
-    # This if-else here is not the best. I just need it quickly now because the script breaks if we have only 1 worker.
-    # TODO: change this to a more elegant solution later
     if num_chunks > 1:
         # Process the index_chunk for this idx...
-        index_chunk = global_index_chunks[idx] if idx < len(global_index_chunks) else []
+        global_id = int(idx) - int(os.environ["SLURM_ARRAY_TASK_MIN"])
+        index_chunk = (
+            global_index_chunks[global_id]
+            if global_id < len(global_index_chunks)
+            else []
+        )
     else:
         index_chunk = index
     # (Add your processing logic here)

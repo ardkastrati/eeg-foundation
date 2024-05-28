@@ -31,7 +31,7 @@ done
 
 # Binary or script to execute
 # make visualize
-srun python /home/maxihuber/eeg-foundation/development/index_creation/builder_script.py
+srun python /home/maxihuber/eeg-foundation/development/index_creation/eyenet/eyenet_index.py
 
 # Send more noteworthy information to the output log
 echo "Finished at:     $(date)"

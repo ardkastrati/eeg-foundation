@@ -8,7 +8,7 @@ from torch.utils.data.distributed import DistributedSampler
 import torch.distributed as dist
 
 
-class ByTrialDistributedSampler(DistributedSampler):
+class ByChannelDistributedSampler(DistributedSampler):
     def __init__(
         self,
         mode,
@@ -83,10 +83,6 @@ class ByTrialDistributedSampler(DistributedSampler):
         return int(x_datapoints / self.patch_size)
 
     def get_nr_patches(self, win_size, sr, dur):
-        # to be cautious: we add 1 to the number of patches in both directions
-        # return (self.get_nr_y_patches(win_size=win_size, sr=sr) + 1) * (
-        #     self.get_nr_x_patches(win_size=win_size, dur=dur) + 1
-        # )
         return self.get_nr_y_patches(win_size=win_size, sr=sr) * (
             self.get_nr_x_patches(win_size=win_size, dur=dur)
         )
@@ -129,6 +125,14 @@ class ByTrialDistributedSampler(DistributedSampler):
 
                 for trial_idx, channels in trial_to_channels.items():
 
+                    # Create a generator for deterministic shuffling
+                    g = torch.Generator()
+                    g.manual_seed(self.seed + self.epoch)
+                    indices = torch.randperm(len(channels), generator=g).tolist()
+
+                    # Shuffle the channels list deterministically
+                    channels = [channels[i] for i in indices]
+
                     for idx in channels:
 
                         channel_idx = self.subset_indices[idx]
@@ -138,6 +142,9 @@ class ByTrialDistributedSampler(DistributedSampler):
                             sr=channel_info["sr"],
                             dur=channel_info["dur"],
                         )
+                        assert (
+                            new_patches <= self.max_nr_patches
+                        ), f"new_patches > max_nr_patches: {new_patches} > {self.max_nr_patches}"
                         assert (
                             channel_info["sr"] == sr
                         ), f"channel_info['sr'] ({channel_info['sr']}) != sr ({sr})"
@@ -233,10 +240,6 @@ class ByTrialDistributedSampler(DistributedSampler):
         self.total_size = len(self.batch_indices)
         self.num_samples = math.ceil(self.total_size / self.num_replicas)
 
-    def __iter__NEW(self):
-        # Recompute batch each epoch
-        pass
-
     def __iter__(self):
         if self.shuffle:
             # deterministically shuffle based on epoch and seed
@@ -278,3 +281,6 @@ class ByTrialDistributedSampler(DistributedSampler):
 
     def set_epoch(self, epoch):
         self.epoch = epoch
+        if self.shuffle:
+            # recompute batches
+            self.generate_batches()
