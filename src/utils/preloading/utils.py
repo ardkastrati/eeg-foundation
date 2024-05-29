@@ -1,14 +1,15 @@
-from concurrent.futures import ThreadPoolExecutor, as_completed
-import logging
-from math import ceil
 import os
 import sys
 import json
+import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from math import ceil
 
 import mne
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
+import re
 
 
 def filter_index(
@@ -16,8 +17,7 @@ def filter_index(
     path_prefix,
     min_duration,
     max_duration,
-    select_sr,
-    select_ref,
+    discard_sr,
     discard_datasets,
 ):
     """
@@ -45,14 +45,10 @@ def filter_index(
                 print(("=" * 10) + f"filtered {i} files" + ("=" * 10), file=sys.stderr)
 
             if (
-                index_element["sr"] not in select_sr
-                # and edf_file["ref"] in select_ref
-                and index_element["duration"] >= min_duration
+                index_element["duration"] >= min_duration
                 and index_element["duration"] <= max_duration
-                and (
-                    "Dataset" not in index_element  # escapes tueg index file
-                    or index_element["Dataset"] not in discard_datasets
-                )
+                and index_element["sr"] not in discard_sr
+                and index_element["Dataset"] not in discard_datasets
             ):
                 # the edf index comes with relative, the csv index with absolute paths
                 if index_element["path"].endswith(".edf"):
@@ -114,11 +110,41 @@ def avg_channel(raw):
     return avg
 
 
+# Add subject ID information for each path
+def get_subject_id(filepath):
+    if filepath.endswith("pkl"):
+        # Regular expression to match the UUID in the middle of the file path
+        match = re.search(
+            r"[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}", filepath
+        )
+        if match:
+            return match.group(0)
+        return None
+    elif filepath.endswith("edf"):
+        parts = filepath.split("/")
+        subject_id = parts[
+            2
+        ]  # The subject ID is the third element after splitting by '/'
+        return subject_id
+    else:
+        assert False, f"invaliv file format for file {filepath}"
+
+
 class load_path_data:
-    def __init__(self):
+    def __init__(self, min_duration, max_duration):
+        self.min_duration = min_duration
+        self.max_duration = max_duration
         logger = logging.getLogger("pyprep")
         logger.setLevel(logging.ERROR)
         mne.set_log_level("WARNING")
+
+    def get_duration(self, index_element):
+        # if index_element["duration"] >= self.max_duration:
+        #     dur = np.inf
+        # else:
+        #     dur = int(index_element["duration"])
+        # return dur
+        return int(index_element["duration"])
 
     def __call__(self, index_element):
         """
@@ -150,7 +176,6 @@ class load_path_data:
                 # Create a mne.Raw to be compatible with the coming processing steps
                 eeg_data = create_raw(
                     data=df,
-                    # TODO: only include the good_channels here (once the pre-processing is finished)
                     ch_names1=index_element["good_channels"],
                     sr=index_element["sr"],
                 )
@@ -177,13 +202,25 @@ class load_path_data:
 class LocalLoader:
     def __init__(
         self,
+        min_duration=1,
+        patch_size=16,
+        max_nr_patches=8_500,
+        win_shifts=[0.25, 0.5, 1, 2, 4, 8],
+        win_shift_factor=0.25,
         num_threads=1,
         base_stor_dir="/scratch/mae",
     ):
-        self.base_stor_dir = base_stor_dir
-        self.num_threads = num_threads
 
-        # Create the STORDIR, i.e. the location on the local node where the spectrograms will be stored.
+        self.min_duration = min_duration
+        self.patch_size = patch_size
+        self.max_nr_patches = max_nr_patches
+        self.win_shifts = win_shifts
+        self.win_shift_factor = win_shift_factor
+
+        self.num_threads = num_threads
+        self.base_stor_dir = base_stor_dir
+
+        # Create the STORDIR, i.e. the location on the local node where the EEG data will be stored.
         if not os.path.exists(self.base_stor_dir):
             os.makedirs(self.base_stor_dir)
         elif not os.access(self.base_stor_dir, os.W_OK):
@@ -191,57 +228,128 @@ class LocalLoader:
                 f"The directory {self.base_stor_dir} is not writable. Please check the permissions."
             )
 
-    def load(self, index_chunk, chunk_duration, thread_id):
+    # Copied from ByTrialDistributedSampler
+    def get_nr_y_patches(self, win_size, sr):
+        return int((sr // 2 * win_size + 1) // self.patch_size)
+
+    def get_nr_x_patches(self, win_size, dur):
+        win_shift = win_size * self.win_shift_factor
+        x_datapoints_per_second = 1 / win_shift
+        x_datapoints = dur * x_datapoints_per_second + 1
+        return int(x_datapoints // self.patch_size)
+
+    def get_nr_patches(self, win_size, sr, dur):
+        return self.get_nr_y_patches(win_size=win_size, sr=sr) * (
+            self.get_nr_x_patches(win_size=win_size, dur=dur)
+        )
+
+    def get_max_nr_patches(self, sr, dur):
+        suitable_win_sizes = self.get_suitable_win_sizes(sr, dur)
+        return max(
+            [self.get_nr_patches(win_size, sr, dur) for win_size in suitable_win_sizes]
+        )
+
+    def get_suitable_win_sizes(self, sr, dur):
+        return [
+            win_shift
+            for win_shift in self.win_shifts
+            if self.get_nr_y_patches(win_shift, sr) >= 1
+            and self.get_nr_x_patches(win_shift, dur) >= 1
+        ]
+
+    def get_suitable_win_size(self, sr, dur):
+        win_sizes = self.get_suitable_win_sizes(sr, dur)
+        return None if not win_sizes else win_sizes[0]
+
+    def get_max_y_patches(self, sr, dur):
+        max_win_shift = max(self.get_suitable_win_sizes(sr, dur))
+        return self.get_nr_y_patches(win_size=max_win_shift, sr=sr)
+
+    def load(self, index_chunk, thread_id):
 
         num_files_in_subdir = 20_000  # Number of files to store in each subdirectory. (make a method argument)
 
-        # Create a temporary directory within the storage directory.
-        # parent = tempfile.TemporaryDirectory(dir=self.base_stor_dir)
         subdirs = {}  # List of subdirectories holding the spectrograms.
         print("Storing spectros to (STORDIR): " + self.base_stor_dir, file=sys.stderr)
 
-        p_loader = load_path_data()
-        signal_chunks_index = {}  # Dict of paths to the saved signals & metadata.
+        p_loader = load_path_data(
+            min_duration=self.min_duration, max_duration=self.max_duration
+        )
+        trial_index = {}  # Dict of paths to the saved signals & metadata.
         channel_set = set()
 
-        i = 0
+        num_trials = 0
+        num_files = 0
 
-        print("Starting to save the spectrograms locally", file=sys.stderr)
-        print(f"len index_chunk on {thread_id}:", len(index_chunk), file=sys.stderr)
+        print("Starting to save the trials locally", file=sys.stderr)
+        print(f"Nr. trials on {thread_id}:", len(index_chunk), file=sys.stderr)
 
-        for count_processed_elements, index_element in enumerate(index_chunk):
+        for num_processed_elements, index_element in enumerate(index_chunk):
+
+            sr = index_element["sr"]
+            dur = index_element["duration"]
+
+            if dur < self.min_duration or dur > self.max_duration:
+                continue
+
             channel_data_dict = p_loader(index_element)
-            sr = index_element["sr"]  # sampling rate
 
-            for channel, signal in channel_data_dict.items():
+            trial_info = {
+                "num_channels": len(channel_data_dict),
+                "channels": [],
+                "paths": [],
+                "sr": sr,
+                "dur": dur,
+                "ref": index_element["ref"],
+                "Dataset": index_element["Dataset"],
+                "SubjectID": index_element["SubjectID"],
+            }
+
+            for channel, channel_signal in channel_data_dict.items():
+                channel_set.add(channel)
 
                 # Convert to u_volt (micro-volt)
-                signal = signal * 1_000_000
+                channel_signal = channel_signal * 1_000_000
 
-                # Divide signals into chunks of 5s and store them into a list
-                chunks = []
-                # chunk_duration = 4  # duration of each crop in seconds
-                if (
-                    len(signal) >= sr * chunk_duration
-                ):  # Only proceed if signal is at least one chunk long
-                    # Calculate number of full chunks
-                    num_chunks = int(len(signal) // (sr * chunk_duration))
-                    for j in range(num_chunks):
-                        start_idx = int(j * sr * chunk_duration)
-                        end_idx = int(start_idx + sr * chunk_duration)
-                        chunk = signal[start_idx:end_idx]
-                        chunks.append(chunk)
+                # Find maximum duration which does not nuke CUDA memory
+                patches = self.get_max_nr_patches(sr, dur)
+                if patches > self.max_nr_patches:
+                    # Split channel_signal 1-d tensor into chunks of max_dur duration
+                    # Did some arithmetic to get the formula right, it's just nr_x_patches * nr_y_patches
+                    #  rearranged for duration, and we iterate over the full win_shift space
+                    max_durs = [
+                        int(
+                            (
+                                (self.patch_size**2) * self.max_nr_patches
+                                - sr * win_shift / 2
+                                - 1
+                            )
+                            / (
+                                sr / self.win_shift_factor / 2
+                                + 1 / self.win_shift_factor / win_shift
+                            )
+                        )
+                        for win_shift in (
+                            self.win_shifts if sr >= 120 else self.win_shifts[1:]
+                        )
+                    ]
+                    max_dur = min(max_durs)
+                    jump = int(sr * max_dur)
+                    signal_chunks = [
+                        channel_signal[i : i + jump]
+                        for i in range(0, len(channel_signal), jump)
+                    ]
+                else:
+                    signal_chunks = [channel_signal]
 
-                # Store each chunk to self.STORDIR
-                for signal_chunk in chunks:
+                for signal in signal_chunks:
 
                     # Determine which subdirectory to use.
                     # Calculate index for the file within its subdirectory.
-                    subdir_index = i // num_files_in_subdir
+                    subdir_index = num_files // num_files_in_subdir
 
-                    if i % num_files_in_subdir == 0:
-                        # Make a new temporary directory
-                        # subdirs[subdir_index] = tempfile.mkdtemp(dir=parent.name)
+                    if num_files % num_files_in_subdir == 0:
+
                         subdirs[subdir_index] = os.path.join(
                             self.base_stor_dir, f"{thread_id}_{subdir_index}"
                         )
@@ -251,46 +359,47 @@ class LocalLoader:
                             file=sys.stderr,
                         )
                         print(
-                            f"Current progress: {count_processed_elements}/{len(index_chunk)}...",
+                            f"Current progress: {num_processed_elements}/{len(index_chunk)}...",
                             file=sys.stderr,
                         )
 
+                        # In order to not lose progress: store the current state of the trial_index
+                        path_to_trial_index = os.path.join(
+                            self.base_stor_dir, f"data_index_{thread_id}.txt"
+                        )
+                        with open(path_to_trial_index, "w") as file:
+                            json.dump(trial_index, file)
+
                     file_name = (
-                        "signal" + "_" + str(thread_id) + "_" + str(i) + ".npy"
+                        "signal" + "_" + str(thread_id) + "_" + str(num_files) + ".npy"
                     )  # Create the filename.
                     save_path = os.path.join(subdirs[subdir_index], file_name)
 
-                    np.save(save_path, signal_chunk)  # Save the signal as a numpy file.
+                    np.save(save_path, signal)  # Save the signal as a numpy file.
+                    num_files += 1
+
                     # Store the path to the signal and some metadata.
-                    signal_chunks_index[i] = {
-                        "path": save_path,
-                        "ref": index_element["ref"],
-                        "sr": index_element["sr"],
-                        "duration": index_element["duration"],
-                        "channel": channel,
-                    }
+                    trial_info["channels"].append(channel)
+                    trial_info["paths"].append(save_path)
 
-                    i += 1
+            # == stored data for all channels to different files
 
-                channel_set.add(channel)
-                chunks.clear()  # Clear the list to free memory
-                # == stored all chunks for this channel ==
-
-            channel_data_dict.clear()  # Clear the dictionary to free memory
-            # == stored all channels for this index_element ==
+            trial_index[num_trials] = trial_info
+            num_trials += 1
+            # == stored everything for this index_element (trial) ==
 
         # == stored all index_elements for this index_chunk ==
 
-        print(f"Saved {i} signal chunks on process {thread_id}", file=sys.stderr)
+        print(f"Saved {num_trials} trials on process {thread_id}", file=sys.stderr)
 
-        # Store the list of paths to the spectrograms.
-        path_to_signal_chunks_index = os.path.join(
+        # Store the trial_index
+        path_to_trial_index = os.path.join(
             self.base_stor_dir, f"data_index_{thread_id}.txt"
         )
-        with open(path_to_signal_chunks_index, "w") as file:
-            json.dump(signal_chunks_index, file)
+        with open(path_to_trial_index, "w") as file:
+            json.dump(trial_index, file)
 
-        return path_to_signal_chunks_index, channel_set
+        return path_to_trial_index, channel_set, num_trials
 
     def run(self, index, chunk_duration):
         # split the index file into num_threads many groups
@@ -322,4 +431,5 @@ class LocalLoader:
                     print(chunk_path_to_spg_paths)  # Log the completion
                     pbar.update(1)
 
+        return chunk_paths
         return chunk_paths

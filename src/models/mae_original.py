@@ -16,6 +16,7 @@ from json import encoder
 import json
 import os
 from socket import gethostname
+import sys
 import torch
 import torch.nn as nn
 
@@ -184,9 +185,9 @@ class MaskedAutoencoderViT(nn.Module):
         self.blocks = nn.ModuleList(
             [
                 Block(
-                    embed_dim,
-                    num_heads,
-                    mlp_ratio,
+                    dim=embed_dim,
+                    num_heads=num_heads,
+                    mlp_ratio=mlp_ratio,
                     qkv_bias=True,
                     norm_layer=norm_layer,
                 )
@@ -378,14 +379,13 @@ class MaskedAutoencoderViT(nn.Module):
 
     def patchify(self, imgs):
         """
-        imgs: (N, 3, H, W)
-        x: (N, L, patch_size**2 *3)
-        L = (H/p)*(W/p)
+        Reshapes the batch from (B, C, H, W) to (B, N, patch_size**2 * C)
+        where N = (H/p)*(W/p), p is the patch size
         """
         p = self.patch_embed.patch_size[0]
         # assert imgs.shape[2] == imgs.shape[3] and imgs.shape[2] % p == 0
 
-        if self.audio_exp:
+        if self.audio_exp:  # only 1 channel for audio/eeg
             if self.use_custom_patch:  # overlapped patch
                 h, w = self.patch_embed.patch_hw
                 x = imgs.unfold(2, self.patch_size, self.stride).unfold(
@@ -401,8 +401,8 @@ class MaskedAutoencoderViT(nn.Module):
                 # h,w = self.patch_embed.patch_hw
                 x = imgs.reshape(shape=(imgs.shape[0], 1, h, p, w, p))
                 x = torch.einsum("nchpwq->nhwpqc", x)
-                x = x.reshape(shape=(imgs.shape[0], h * w, p**2 * 1))
-        else:
+                x = x.reshape(shape=(imgs.shape[0], h * w, p * p * 1))
+        else:  # for image, we have 3 channels
             h = w = imgs.shape[2] // p
             x = imgs.reshape(shape=(imgs.shape[0], 3, h, p, w, p))
             x = torch.einsum("nchpwq->nhwpqc", x)
@@ -412,8 +412,8 @@ class MaskedAutoencoderViT(nn.Module):
 
     def unpatchify(self, x):
         """
-        x: (N, L, patch_size**2 *3)
-        specs: (N, 1, H, W)
+        x: (B, L, patch_size**2 *3)
+        specs: (B, 1, H, W)
         """
         p = self.patch_embed.patch_size[0]
         # Pascal: adjusted for our spectrogram size
@@ -428,12 +428,12 @@ class MaskedAutoencoderViT(nn.Module):
         """
         Perform per-sample random masking by per-sample shuffling.
         Per-sample shuffling is done by argsort random noise.
-        x: [N, L, D], sequence
+        x: [B, L, D], sequence
         """
-        N, L, D = x.shape  # batch, length, dim
+        B, L, D = x.shape  # batch, length, dim
         len_keep = int(L * (1 - mask_ratio))
 
-        noise = torch.rand(N, L, device=x.device)  # noise in [0, 1]
+        noise = torch.rand(B, L, device=x.device)  # noise in [0, 1]
 
         # sort noise for each sample
         ids_shuffle = torch.argsort(
@@ -446,7 +446,7 @@ class MaskedAutoencoderViT(nn.Module):
         x_masked = torch.gather(x, dim=1, index=ids_keep.unsqueeze(-1).repeat(1, 1, D))
 
         # generate the binary mask: 0 is keep, 1 is remove
-        mask = torch.ones([N, L], device=x.device)
+        mask = torch.ones([B, L], device=x.device)
         mask[:, :len_keep] = 0
         # unshuffle to get the binary mask
         mask = torch.gather(mask, dim=1, index=ids_restore)
@@ -458,21 +458,21 @@ class MaskedAutoencoderViT(nn.Module):
         2D: Spectrogram (msking t and f under mask_t_prob and mask_f_prob)
         Perform per-sample random masking by per-sample shuffling.
         Per-sample shuffling is done by argsort random noise.
-        x: [N, L, D], sequence
+        x: [B, L, D], sequence
         """
-        N, L, D = x.shape  # batch, length, dim
+        B, L, D = x.shape  # batch, length, dim
         if self.use_custom_patch:  # overlapped patch
             T = 101
             F = 12
         else:
             T = 64
             F = 8
-        # x = x.reshape(N, T, F, D)
+        # x = x.reshape(B, T, F, D)
         len_keep_t = int(T * (1 - mask_t_prob))
         len_keep_f = int(F * (1 - mask_f_prob))
 
         # noise for mask in time
-        noise_t = torch.rand(N, T, device=x.device)  # noise in [0, 1]
+        noise_t = torch.rand(B, T, device=x.device)  # noise in [0, 1]
         # sort noise for each sample aling time
         ids_shuffle_t = torch.argsort(
             noise_t, dim=1
@@ -480,7 +480,7 @@ class MaskedAutoencoderViT(nn.Module):
         ids_restore_t = torch.argsort(ids_shuffle_t, dim=1)
         ids_keep_t = ids_shuffle_t[:, :len_keep_t]
         # noise mask in freq
-        noise_f = torch.rand(N, F, device=x.device)  # noise in [0, 1]
+        noise_f = torch.rand(B, F, device=x.device)  # noise in [0, 1]
         ids_shuffle_f = torch.argsort(
             noise_f, dim=1
         )  # ascend: small is keep, large is remove
@@ -489,27 +489,27 @@ class MaskedAutoencoderViT(nn.Module):
 
         # generate the binary mask: 0 is keep, 1 is remove
         # mask in freq
-        mask_f = torch.ones(N, F, device=x.device)
+        mask_f = torch.ones(B, F, device=x.device)
         mask_f[:, :len_keep_f] = 0
         mask_f = (
             torch.gather(mask_f, dim=1, index=ids_restore_f)
             .unsqueeze(1)
             .repeat(1, T, 1)
-        )  # N,T,F
+        )  # B,T,F
         # mask in time
-        mask_t = torch.ones(N, T, device=x.device)
+        mask_t = torch.ones(B, T, device=x.device)
         mask_t[:, :len_keep_t] = 0
         mask_t = (
             torch.gather(mask_t, dim=1, index=ids_restore_t)
             .unsqueeze(1)
             .repeat(1, F, 1)
             .permute(0, 2, 1)
-        )  # N,T,F
-        mask = 1 - (1 - mask_t) * (1 - mask_f)  # N, T, F
+        )  # B,T,F
+        mask = 1 - (1 - mask_t) * (1 - mask_f)  # B, T, F
 
         # get masked x
         # TODO: study why the .to(device) call is necessary here and it if could be done differently
-        id2res = torch.Tensor(list(range(N * T * F))).reshape(N, T, F).to(x.device)
+        id2res = torch.Tensor(list(range(B * T * F))).reshape(B, T, F).to(x.device)
         id2res = id2res + 999 * mask  # add a large value for masked elements
         id2res2 = torch.argsort(id2res.flatten(start_dim=1))
         ids_keep = id2res2.flatten(start_dim=1)[:, : len_keep_f * len_keep_t]
@@ -520,34 +520,35 @@ class MaskedAutoencoderViT(nn.Module):
 
         return x_masked, mask, ids_restore
 
-    def forward_encoder(self, x, mask_ratio, mask_2d=False):
+    def forward_encoder(self, batch, mask_ratio, mask_2d=False):
         """ """
 
         # embed patches (pass through patch_embed layer)
         # i.e. transform input images into a sequence of flattened patches
-        # print("before self.path_embed(x)", x.shape)
-        x = self.patch_embed(x)
+        # print("before self.path_embed(x)", batch.shape, file=sys.stderr)
+        batch = self.patch_embed(batch)
         # print("after self.path_embed(x)", x.shape)
 
         channels = []
 
+        # TODO: positional embeddings
         # add pos embed (exclude cls token)
         # print("self.pos_embed[:,1:,:]", self.pos_embed[:, 1:, :].shape)
-        x = x + self.pos_embed[:, 1:, :]
+        # x = x + self.pos_embed[:, 1:, :]
         # print("after x + self.pos_embed[:, 1:, :]", x.shape)
 
         # masking: length -> length * mask_ratio
         if mask_2d:  # apply both time and frequency masking
-            x, mask, ids_restore = self.random_masking_2d(
-                x, mask_t_prob=self.mask_t_prob, mask_f_prob=self.mask_f_prob
+            batch, mask, ids_restore = self.random_masking_2d(
+                batch, mask_t_prob=self.mask_t_prob, mask_f_prob=self.mask_f_prob
             )
         else:  # apply unstructured random masking
-            x, mask, ids_restore = self.random_masking(x, mask_ratio)
+            batch, mask, ids_restore = self.random_masking(batch, mask_ratio)
 
         # append cls token (isn't it prepend here) ?
-        cls_token = self.cls_token + self.pos_embed[:, :1, :]
-        cls_tokens = cls_token.expand(x.shape[0], -1, -1)
-        x = torch.cat((cls_tokens, x), dim=1)
+        # cls_token = self.cls_token + self.pos_embed[:, :1, :]
+        cls_tokens = self.cls_token.expand(batch.shape[0], -1, -1)
+        batch = torch.cat((cls_tokens, batch), dim=1)
 
         # append channel token, why not done?
         """
@@ -560,14 +561,15 @@ class MaskedAutoencoderViT(nn.Module):
         # the sequence of patches is processed through the transformer blocks
         # applying self-attention
         for blk in self.blocks:
-            x = blk(x)
+            batch = blk(batch)
 
         # output sequence is passed through normalization layer
-        x = self.norm(x)
+        batch = self.norm(batch)
 
+        # we don't have self.encoder_emb defined anymore
         # emb = self.encoder_emb(x)
 
-        return x, mask, ids_restore, None
+        return batch, mask, ids_restore, None
 
     def forward_encoder_no_mask(self, x):
         """ """
@@ -611,8 +613,9 @@ class MaskedAutoencoderViT(nn.Module):
         )  # unshuffle
         x = torch.cat([x[:, :1, :], x_], dim=1)  # append cls token
 
+        # TODO: positional embeddings
         # add pos embed
-        x = x + self.decoder_pos_embed
+        # x = x + self.decoder_pos_embed
 
         # print("after pos embed", x.shape)
 
@@ -650,9 +653,9 @@ class MaskedAutoencoderViT(nn.Module):
 
     def forward_loss(self, imgs, pred, mask, norm_pix_loss=False):
         """
-        imgs: [N, 3, H, W]
-        pred: [N, L, p*p*3]
-        mask: [N, L], 0 is keep, 1 is remove,
+        imgs: [B, C, H, W]
+        pred: [B, L, p*p*C]
+        mask: [B, L], 0 is keep, 1 is remove,
         """
         target = self.patchify(imgs)
         if norm_pix_loss:
@@ -661,29 +664,31 @@ class MaskedAutoencoderViT(nn.Module):
             target = (target - mean) / (var + 1.0e-6) ** 0.5
 
         loss = (pred - target) ** 2
-        loss = loss.mean(dim=-1)  # [N, L], mean loss per patch
+        loss = loss.mean(dim=-1)  # [B, L], mean loss per patch
 
         loss = (loss * mask).sum() / mask.sum()  # mean loss on removed patches
         loss = loss.sum()
         return loss
 
-    def forward(self, imgs, mask_ratio=0.5):
+    def forward(self, batch, mask_ratio=0.15):
 
         # == Encoder pass of model ==
         # emb_enc: encoded representations of the input images after applying the transformer encoder blocks
         # mask: binary mask (which patches were masked)
         # ids_restore: indices for restoring original order of patches after shuffling for masking
         emb_enc, mask, ids_restore, _ = self.forward_encoder(
-            imgs, mask_ratio, mask_2d=self.mask_2d
+            batch, mask_ratio, mask_2d=self.mask_2d
         )
+        print("mask", mask, file=sys.stderr)
 
         # == Decoder pass of model ==
         # pred: predicted reconstruction (tensor of same shape as emb_enc)
-        pred, _, _ = self.forward_decoder(emb_enc, ids_restore)  # [N, L, p*p*3]
+        pred, _, _ = self.forward_decoder(emb_enc, ids_restore)  # [B, L, p*p*3]
+        print("pred.shape", pred.shape, file=sys.stderr)
 
         # == Reconstruction loss ==
         loss_recon = self.forward_loss(
-            imgs, pred, mask, norm_pix_loss=self.norm_pix_loss
+            batch, pred, mask, norm_pix_loss=self.norm_pix_loss
         )
         # According to Pascal, this is an artefact from the VisionTransformer Architecture, but we're not using it rn!
         # Each batch spent about 1/4th of its time moving this little tensor to the GPU due to the .cuda() call

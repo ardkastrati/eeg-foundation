@@ -5,11 +5,12 @@
 #SBATCH --error=/itet-stor/maxihuber/net_scratch/runs/%j/train_%j.err
 #SBATCH --open-mode=append
 #SBATCH --nodes=1
-#SBATCH --gres=gpu:1
-#SBATCH --ntasks-per-node=1
+#SBATCH --gres=gpu:2
+#SBATCH --ntasks-per-node=2
 #SBATCH --cpus-per-task=2
 #SBATCH --mem=50G
 #SBATCH --time=03:00:00
+#SBATCH --nodelist=tikgpu10
 
 # Create directories for job
 mkdir -p /itet-stor/maxihuber/net_scratch/runs/$SLURM_JOB_ID
@@ -39,7 +40,7 @@ done
 
 # Binary or script to execute
 wandb login
-srun python /home/maxihuber/eeg-foundation/src/train.py experiment=maxim.yaml
+srun python /home/maxihuber/eeg-foundation/src/train.py experiment=rope.yaml
 
 # Send more noteworthy information to the output log
 echo "Finished at:     $(date)"

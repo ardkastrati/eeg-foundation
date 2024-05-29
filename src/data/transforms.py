@@ -1,6 +1,7 @@
 import pickle
 import sys
 
+from matplotlib import pyplot as plt
 import mne
 import pandas as pd
 import numpy as np
@@ -23,6 +24,7 @@ from torch.nn.functional import interpolate
 from torch.utils.data import DataLoader
 import multiprocessing
 from torchvision import transforms
+import torch.nn.functional as F
 
 
 from pyprep.prep_pipeline import PrepPipeline
@@ -109,6 +111,50 @@ class fft_256:
         return spectrogram
 
 
+# class custom_fft:
+#     """
+#     FFT transform that takes in a window size and shift
+#     and computes the spectrogram using the torchaudio library.
+
+#     The output is converted to decibel scale, and normalized to have zero mean and unit variance.
+#     """
+
+#     def __init__(self, window_seconds, window_shift, sr, cuda=False):
+#         super().__init__()
+#         win_length = int(sr * window_seconds)
+#         hop_length = int(sr / 16)
+#         # print("win_length", win_length)
+#         # print("hop_length", hop_length)
+#         self.fft = torchaudio.transforms.Spectrogram(
+#             n_fft=win_length,
+#             win_length=win_length,
+#             hop_length=hop_length,
+#             normalized=True,
+#         )
+#         if cuda:
+#             self.fft = self.fft.to("cuda")
+
+#     def __call__(self, data):
+#         """
+#         Apply short-time Fourier transform (STFT) to the input data.
+
+#         Args:
+#             data (torch.Tensor): The input data.
+
+#         Returns:
+#             torch.Tensor: The transformed data.
+#         """
+#         spg = self.fft(data)
+
+#         # # Maxim: inserted this, but not sure if needed
+#         # spectrogram = torch.abs(spectrogram)
+
+#         # # convert to decibel, avoid log(0)
+#         # spectrogram = 20 * torch.log10(spectrogram + 1e-10)
+
+#         return spg
+
+
 class custom_fft:
     """
     FFT transform that takes in a window size and shift
@@ -120,9 +166,7 @@ class custom_fft:
     def __init__(self, window_seconds, window_shift, sr, cuda=False):
         super().__init__()
         win_length = int(sr * window_seconds)
-        hop_length = int(sr / 16)
-        # print("win_length", win_length)
-        # print("hop_length", hop_length)
+        hop_length = int(sr * window_shift)
         self.fft = torchaudio.transforms.Spectrogram(
             n_fft=win_length,
             win_length=win_length,
@@ -142,15 +186,60 @@ class custom_fft:
         Returns:
             torch.Tensor: The transformed data.
         """
-        spectrogram = self.fft(data)
+        spg = self.fft(data)
+        spg = spg**2
+        return spg
 
-        # Maxim: inserted this, but not sure if needed
-        spectrogram = torch.abs(spectrogram)
 
-        # convert to decibel, avoid log(0)
-        spectrogram = 20 * torch.log10(spectrogram + 1e-10)
+def crop_spg(spg):
+    # Crop spg to the nearest multiple of 16 in both dimensions
+    # Integer division and multiplication to find the nearest multiple
+    new_height = (spg.shape[0] // 16) * 16
+    new_width = (spg.shape[1] // 16) * 16
+    spg = spg[:new_height, :new_width]  # Crop both dimensions
+    return spg
 
-        return spectrogram
+
+def crop_and_normalize_spg(spg, time_steps):
+
+    # Calculate the nearest multiple of 16 for height and width
+    new_height = (spg.shape[0] // 16) * 16
+    spg = spg[:new_height, :]
+
+    new_width = (time_steps // 16) * 16
+    # Calculate the padding needed for width
+    width_diff = new_width - spg.shape[1]
+    if width_diff > 0:
+        spg = normalize_spg(spg)
+        # Pad to the nearest multiple of 16
+        padding = (0, width_diff, 0, 0)  # (left, right, top, bottom)
+        spg = F.pad(spg, padding, "constant", 0)
+    else:
+        # Crop the width to the nearest multiple of 16
+        spg = spg[:, :new_width]
+        spg = normalize_spg(spg)
+
+    return spg
+
+
+def normalize_spg(spg):
+    # Divide spectrogram by frequency bin-wise means
+    freq_means = spg[:, :].mean(dim=1, keepdim=True)
+    # Divide each frequency bin by its mean
+    normalized_spg = spg[:, :] / freq_means
+    # Transform to decibel-scale
+    db_spg = 10 * torch.log10(normalized_spg)
+    db_means = 10 * torch.log10(freq_means)
+    return db_spg, db_means
+
+
+def plot_spg(spg, sr, dur):
+    plt.pcolormesh(spg, shading="auto", cmap="viridis")
+    plt.ylabel("Frequency Bins")
+    plt.xlabel("steps")
+    plt.title(f"Spectrogram: {sr}, {dur}")
+    plt.colorbar(label="")
+    plt.show()
 
 
 def create_raw(

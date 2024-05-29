@@ -35,6 +35,9 @@ fulltrain:
 sbatch:
 	sbatch /home/maxihuber/eeg-foundation/job_scripts/train_slurm/train.slurm
 
+rope:
+	sbatch /home/maxihuber/eeg-foundation/job_scripts/train_slurm/rope.slurm
+
 gpuserver: ## connect to GPU server cluster
 	srun --time 60 --gres=gpu:1 --pty bash -i
 
@@ -69,13 +72,19 @@ cpu:
 	srun --time 700 --gres=gpu:0 --mem=50G --pty bash -i
 
 cpu2:
-	srun --time 700 --gres=gpu:0 --mem=50G --nodelist=tikgpu05 --pty bash -i
+	srun --time 700 --gres=gpu:0 --mem=50G --nodelist=tikgpu08 --pty bash -i
 
-cpu3:
-	srun --time 700 --gres=gpu:0 --mem=10G --nodelist=arton06 --pty bash -i
+cpu10:
+	srun --time 500 --gres=gpu:0 --mem=50G --nodelist=tikgpu10 --pty bash -i
+
+gpu10:
+	srun --time 500 --gres=gpu:1 --mem=50G --nodelist=tikgpu10 --pty bash -i
 
 jupyter:
-	jupyter notebook --no-browser --port 5995 --ip $$(hostname -f)
+	jupyter notebook --no-browser --port 5991 --ip $$(hostname -f)
+
+env:
+	conda activate fastenv
 
 # gpus: ## connect to GPU server cluster
 # 	srun --time 1:00:00 --gres=gpu:3 --mem=300G --pty bash -i

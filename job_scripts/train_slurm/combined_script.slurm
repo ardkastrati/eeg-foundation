@@ -3,11 +3,11 @@
 #SBATCH --mail-type=ALL                 # Mail configuration: NONE, BEGIN, END, FAIL, REQUEUE, ALL
 #SBATCH --output=/itet-stor/maxihuber/net_scratch/runs/%A/preloading/%A_%a.out
 #SBATCH --error=/itet-stor/maxihuber/net_scratch/runs/%A/preloading/%A_%a.err
-#SBATCH --job-name=process-and-train    # Combined job name
-#SBATCH --array=0-4                     # Creates 5 jobs for preloading
+#SBATCH --job-name=load-and-train       # Combined job name
+#SBATCH --array=5-5                     # Creates 5 jobs for preloading
 #SBATCH --nodes=1                       # All tasks on one node for preloading
-#SBATCH --mem=50G                       # Memory per array job
-#SBATCH --nodelist=tikgpu05             # Node selection for preloading
+#SBATCH --mem=100G                      # Memory per array job
+#SBATCH --nodelist=tikgpu02             # Node selection for preloading
 
 # Create directory for job
 mkdir -p /itet-stor/maxihuber/net_scratch/runs/$SLURM_ARRAY_JOB_ID
@@ -25,10 +25,14 @@ conda activate fastenv
 cd /home/maxihuber/eeg-foundation/
 
 # Define variables
-num_chunks=$(($SLURM_ARRAY_TASK_MAX + 1))
+num_chunks=$(($SLURM_ARRAY_TASK_MAX - $SLURM_ARRAY_TASK_MIN + 1))
+echo "Number of incomplete tasks: ${num_chunks}"
 
 # Run the Python script for preloading
 python /home/maxihuber/eeg-foundation/src/utils/preloading/preload_chunk.py $num_chunks $SLURM_ARRAY_TASK_ID
+
+# TODO: remove for actual training
+exit 0
 
 # Check if this is the last array job, if so continue to training
 if [[ $SLURM_ARRAY_TASK_ID -eq $((num_chunks - 1)) ]]; then

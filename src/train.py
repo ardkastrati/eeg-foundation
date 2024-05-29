@@ -30,6 +30,7 @@ rootutils.setup_root(__file__, indicator=".project-root", pythonpath=True)
 # ------------------------------------------------------------------------------------ #
 
 from src.models.mae_module import MAEModule
+from src.models.mae_rope_module import MAEModuleRoPE
 from src.utils import (
     RankedLogger,
     extras,
@@ -80,7 +81,7 @@ def train(cfg: DictConfig) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     log.info("Instantiating loggers...")
     # logger = hydra.utils.instantiate(
     #     cfg.logger,
-    #     dir=f"{cfg.data.runs_dir}/{os.getenv('SLURM_JOB_ID')}",
+    #     dir=f"{cfg.paths.runs_dir}/{os.getenv('SLURM_JOB_ID')}",
     #     # group=f"{os.getenv('SLURM_JOB_ID')}",
     # )
     setup_wandb(cfg)
@@ -93,7 +94,6 @@ def train(cfg: DictConfig) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     # == Instantiate Model ==
 
     log.info(f"Instantiating model <{cfg.model._target_}>")
-    cfg.model.max_epochs = cfg.trainer.max_epochs
     if cfg.restore_from_checkpoint and cfg.restore_from_checkpoint_path:
         checkpoint_path = cfg.restore_from_checkpoint_path
         if os.path.exists(checkpoint_path):

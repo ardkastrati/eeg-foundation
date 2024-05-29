@@ -38,7 +38,7 @@ class MAEModule(LightningModule):
     ) -> None:
 
         # Initialize attributes
-        print("Initialize MAEModule\n=====================")
+        # print("Initialize MAEModule\n=====================")
 
         super().__init__()
 
@@ -62,29 +62,10 @@ class MAEModule(LightningModule):
         self.vis_val_plots = [[] for _ in range(self.max_epochs)]
 
     def forward(self, x):
-        """
-        Executes a forward pass of the neural network.
-
-        Args:
-            x: Input tensor.
-
-        Returns:
-            loss: The calculated loss.
-        """
-        loss, pred, mask, _ = self.net(x, mask_ratio=self.mask_ratio)
+        loss, pred, mask, _ = self.net(x)
         return loss
 
     def training_step(self, batch, batch_idx):
-        """
-        Performs a single training step on the given batch of data.
-
-        Args:
-            batch: The input batch of data.
-            batch_idx: The index of the current batch.
-
-        Returns:
-            The loss value computed during the training step.
-        """
 
         # Forward pass of the model
         loss = self.forward(batch)
@@ -112,16 +93,7 @@ class MAEModule(LightningModule):
         return loss
 
     def validation_step(self, batch, batch_idx):
-        """
-        Performs a validation step for the model.
 
-        Args:
-            batch: The input batch for validation.
-            batch_idx: The index of the current batch.
-
-        Returns:
-            The loss value for the validation step.
-        """
         loss = self.forward(batch)
 
         epoch = self.current_epoch

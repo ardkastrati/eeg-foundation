@@ -10,13 +10,13 @@ import yaml
 from utils import LocalLoader, filter_index
 
 
-def main(data_config, num_chunks, idx):
+def main(config, num_chunks, idx):
 
     print("Starting process", idx, file=sys.stderr)
 
     ## TODO implement wandb.log(data_preparation_time) here
 
-    TMPDIR = f"{data_config['runs_dir']}/{os.environ['SLURM_ARRAY_JOB_ID']}/tmp"
+    TMPDIR = f"{config['runs_dir']}/{os.environ['SLURM_ARRAY_JOB_ID']}/tmp"
     os.makedirs(TMPDIR, exist_ok=True)
 
     """
@@ -55,17 +55,22 @@ def main(data_config, num_chunks, idx):
     """
 
     local_loader = LocalLoader(
-        base_stor_dir=data_config["STORDIR"],
+        min_duration=config["min_duration"],
+        max_duration=config["max_duration"],
+        patch_size=config["patch_size"],
+        max_nr_patches=config["max_nr_patches"] - 500,
+        win_shifts=config["win_shifts"],
+        win_shift_factor=config["win_shift_factor"],
+        base_stor_dir=config["STORDIR"],
     )
 
     index, index_lens, index_sizes = filter_index(
-        index_paths=data_config["data_dir"],
-        path_prefix=data_config["path_prefix"],
-        min_duration=data_config["min_duration"],
-        max_duration=data_config["max_duration"],
-        select_sr=data_config["select_sr"],
-        select_ref=data_config["select_ref"],
-        discard_datasets=data_config["discard_datasets"],
+        index_paths=config["source_indices"],
+        path_prefix=config["path_prefix"],
+        min_duration=config["min_duration"],
+        max_duration=config["max_duration"],
+        discard_sr=config["discard_sr"],
+        discard_datasets=config["discard_datasets"],
     )
 
     # Calculate total size for normalization
@@ -90,7 +95,7 @@ def main(data_config, num_chunks, idx):
     for dir_idx, chunks in enumerate(num_chunks_per_directory):
         # Compute the size of a chunk for this directory
         # (e.g. 1'000 files per tueg worker, 20'000 files per pkl worker)
-        chunk_size = ceil(index_lens[dir_idx] / chunks)
+        chunk_size = ceil(index_lens[dir_idx] / max(1, chunks))
         for chunk_idx in range(chunks):
             chunk_start = start_idx + chunk_idx * chunk_size
             chunk_end = min(chunk_start + chunk_size, start_idx + index_lens[dir_idx])
@@ -115,9 +120,13 @@ def main(data_config, num_chunks, idx):
             print(f"Worker {num_worker} has no files to process.", file=sys.stderr)
         processed += len(index_chunk)
 
-    # Process the index_chunk for this idx...
-    index_chunk = global_index_chunks[idx] if idx < len(global_index_chunks) else []
-
+    # This if-else here is not the best. I just need it quickly now because the script breaks if we have only 1 worker.
+    # TODO: change this to a more elegant solution later
+    if num_chunks > 1:
+        # Process the index_chunk for this idx...
+        index_chunk = global_index_chunks[idx] if idx < len(global_index_chunks) else []
+    else:
+        index_chunk = index
     # (Add your processing logic here)
 
     # chunk_path is a path to a json file, which in turn is of the form
@@ -127,14 +136,15 @@ def main(data_config, num_chunks, idx):
     #  1: {...},
     #  ...}
     # channel_set holds all channel names that were present in the index_chunk on this process
-    path_to_signal_chunks_index, channel_set = local_loader.load(
+
+    path_to_signal_chunks_index, channel_set, nr_files = local_loader.load(
         index_chunk=index_chunk,
-        chunk_duration=data_config["chunk_duration"],
         thread_id=idx,
     )
 
     print(
-        f"Signals at {path_to_signal_chunks_index} on process {idx}.", file=sys.stderr
+        f"Saved {nr_files} signals at {path_to_signal_chunks_index} on process {idx}.",
+        file=sys.stderr,
     )
 
     # we store this list into a json file in the TMPDIR,
@@ -145,9 +155,10 @@ def main(data_config, num_chunks, idx):
         file.write(path_to_signal_chunks_index)
 
     # Also store the channels that are present in the data on this process
-    # -> we need that for the channel embeddings in the network afterwards
+    # -> we need that for the cls_token_map in the network afterwards
     with open(
-        os.path.join(TMPDIR, f"channel_set_{gethostname()}_{idx}.txt"), "w"
+        os.path.join(config["STORDIR"], f"channel_set_{gethostname()}_{idx}.txt"),
+        "w",
     ) as file:
         json.dump(list(channel_set), file)
 
@@ -159,9 +170,8 @@ if __name__ == "__main__":
     idx = int(sys.argv[2])
 
     # Load main config file
-    main_config_file = "/home/maxihuber/eeg-foundation/configs/experiment/maxim.yaml"
+    main_config_file = "/home/maxihuber/eeg-foundation/configs/experiment/pre_load.yaml"
     with open(main_config_file, "r") as file:
         config = yaml.safe_load(file)
-        data_config = config["data"]
 
-    main(data_config, num_chunks, idx)
+    main(config, num_chunks, idx)
