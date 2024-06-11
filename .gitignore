@@ -147,6 +147,7 @@ dmypy.json
 *.h5
 *.tar
 *.tar.gz
+/home/maxihuber/eeg-foundation/src/models/components/Baselines/
 
 # Profiling data
 /log
@@ -175,6 +176,11 @@ src/utils/preloading/Preloading.ipynb
 
 # Checkpoints (WandB & Lightning)
 /eeg-foundation
+
+# Finetuning
+src/finetune/lightning_logs/*
+src/models/components/Baselines/*
+src/data/components/*
 
 # Runs
 index_path*.txt

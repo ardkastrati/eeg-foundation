@@ -11,10 +11,11 @@ import timm.optim.optim_factory as optim_factory
 class MAEModuleRoPE(LightningModule):
     def __init__(
         self,
-        net: nn.Module,
-        optimizer: torch.optim.Optimizer,
-        scheduler: torch.optim.lr_scheduler,
+        net: nn.Module = None,
+        optimizer: torch.optim.Optimizer = None,
+        scheduler: torch.optim.lr_scheduler._LRScheduler = None,
         learning_rate=0.0002,
+        log_frq_lr=1000,
         train_log_frq_loss=100,
         train_log_frq_imgs=200,
         val_log_frq_loss=50,
@@ -27,10 +28,13 @@ class MAEModuleRoPE(LightningModule):
         self.scheduler = scheduler
         self.learning_rate = learning_rate
 
+        self.log_frq_lr = log_frq_lr
         self.train_log_frq_loss = train_log_frq_loss
         self.train_log_frq_imgs = train_log_frq_imgs
         self.val_log_frq_loss = val_log_frq_loss
         self.val_log_frq_imgs = val_log_frq_imgs
+
+        self.save_hyperparameters(logger=False, ignore=["net"])
 
     # == Training, Validation, Testing ==================================================================================================
 
@@ -40,10 +44,19 @@ class MAEModuleRoPE(LightningModule):
     def training_step(self, batch, batch_idx):
         train_loss, flattened_pred, masked_indices = self(batch)
 
+        # print("[training step] train_loss:", train_loss.detach())
+        # self.log("train_loss", train_loss, rank_zero_only=False, sync_dist=True)
+
         # Logging
         if self.trainer.global_step % self.train_log_frq_loss == 0:
             wandb.log(
                 {"train_loss": train_loss.detach()},
+                step=self.trainer.global_step,
+            )
+        if self.trainer.global_step % self.log_frq_lr == 0:
+            current_lr = self.trainer.optimizers[0].param_groups[0]["lr"]
+            wandb.log(
+                {"learning_rate": current_lr},
                 step=self.trainer.global_step,
             )
 
@@ -57,7 +70,13 @@ class MAEModuleRoPE(LightningModule):
         val_loss, flattened_pred, masked_indices = self(batch)
 
         # For checkpointing: log the validation loss with self.log
-        self.log("val_loss", val_loss, rank_zero_only=False)
+        self.log(
+            "val_loss",
+            val_loss,
+            rank_zero_only=False,
+            sync_dist=True,
+            batch_size=batch["batch"].shape[0],
+        )
 
         # Logging
         if self.trainer.global_step % self.val_log_frq_loss == 0:
@@ -75,15 +94,32 @@ class MAEModuleRoPE(LightningModule):
     def test_step(self, batch, batch_idx):
         pass
 
+    # == Checkpoints ====================================================================================================================
+
+    # None atm
+
     # == Helpers ========================================================================================================================
 
     def configure_optimizers(self):
-        # TODO: this is from Pascal, need to make sure it is correct
         param_groups = optim_factory.add_weight_decay(self.net, 0.0001)
         optimizer = torch.optim.AdamW(
             param_groups, lr=self.learning_rate, betas=(0.9, 0.95)
         )
-        return optimizer
+        lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer=optimizer,
+            factor=0.5,
+            patience=1,
+            threshold=0.05,
+            threshold_mode="rel",
+            verbose=True,
+        )
+        return {
+            "optimizer": optimizer,
+            "lr_scheduler": {
+                "scheduler": lr_scheduler,
+                "monitor": "val_loss",
+            },
+        }
 
     def plot_and_log(self, image, title):
 

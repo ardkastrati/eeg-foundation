@@ -76,9 +76,7 @@ def create_raw(
         ch_names2 = ch_names1
     ch_types = ["eeg" for _ in range(len(ch_names1))]
     info = mne.create_info(ch_names2, ch_types=ch_types, sfreq=sr)
-    eeg_data = (
-        np.array(data[ch_names1].T, dtype="float") / 1_000_000
-    )  # in Volt # TODO not sure if each dataset is in uv
+    eeg_data = np.array(data[ch_names1].T, dtype="float") / 1_000_000
     raw = mne.io.RawArray(eeg_data, info)
     return raw
 
@@ -221,6 +219,7 @@ class LocalLoader:
         self,
         min_duration=1,
         max_duration=1_000_000,
+        split_duration=3_600,
         patch_size=16,
         max_nr_patches=7_500,
         win_shifts=[0.25, 0.5, 1, 2, 4, 8],
@@ -231,6 +230,7 @@ class LocalLoader:
 
         self.min_duration = min_duration
         self.max_duration = max_duration
+        self.split_duration = split_duration
         self.patch_size = patch_size
         self.max_nr_patches = max_nr_patches
         self.win_shifts = win_shifts
@@ -314,6 +314,7 @@ class LocalLoader:
             channel_data_dict = p_loader(index_element)
 
             trial_info = {
+                "origin_path": index_element["path"],
                 "num_channels": len(channel_data_dict),
                 "channels": [],
                 "paths": [],
@@ -332,39 +333,23 @@ class LocalLoader:
 
                 # Find maximum duration which does not nuke CUDA memory
                 dur = len(channel_signal) / index_element["sr"]
-                patches = self.get_max_nr_patches(sr, dur)
 
-                if patches > self.max_nr_patches:
-                    print(f"Chopping signal of length {dur}, patches {patches}.")
-                    # Split channel_signal 1-d tensor into chunks of max_dur duration
-                    # Did some arithmetic to get the formula right, it's just nr_x_patches * nr_y_patches
-                    #  rearranged for duration, and we iterate over the full win_shift space
-                    max_durs = [
-                        int(
-                            (
-                                (self.patch_size**2) * self.max_nr_patches
-                                - sr * win_shift / 2
-                                - 1
-                            )
-                            / (
-                                sr / self.win_shift_factor / 2
-                                + 1 / self.win_shift_factor / win_shift
-                            )
-                        )
-                        for win_shift in (
-                            self.win_shifts if sr >= 120 else self.win_shifts[1:]
-                        )
-                    ]
-                    max_dur = min(max_durs)
-                    assert (
-                        self.get_max_nr_patches(sr, max_dur) <= self.max_nr_patches
-                    ), "max_nr_patches exceeded"
-                    jump = int(sr * max_dur)
+                if dur > self.split_duration:
+                    print(
+                        f"Chopping signal of length {dur} seconds into chunks of max {self.split_duration} seconds."
+                    )
+
+                    # Calculate the number of samples in max_dur
+                    max_samples = int(self.split_duration * sr)
+
+                    # Split channel_signal into chunks of max_samples size
                     signal_chunks = [
-                        channel_signal[i : i + jump]
-                        for i in range(0, len(channel_signal), jump)
+                        channel_signal[i : i + max_samples]
+                        for i in range(0, len(channel_signal), max_samples)
                     ]
-                    durs = [int(len(chunk) / sr) for chunk in signal_chunks]
+
+                    # Calculate the duration of each chunk in seconds
+                    durs = [len(chunk) / sr for chunk in signal_chunks]
                     print(durs)
                 else:
                     signal_chunks = [channel_signal]
@@ -416,6 +401,7 @@ class LocalLoader:
                     trial_info["channels"].append(channel)
                     trial_info["paths"].append(save_path)
                     trial_info["durs"].append(dur)
+                signal_chunks.clear()
 
             # == stored data for all channels to different files
             trial_index[num_trials] = trial_info

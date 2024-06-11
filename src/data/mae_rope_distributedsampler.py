@@ -12,8 +12,9 @@ class ByChannelDistributedSampler(DistributedSampler):
     def __init__(
         self,
         mode,
-        full_dataset,
-        subset_indices,
+        dataset,
+        keys,
+        recompute_freq=1,
         drop_last=False,
         patch_size=16,
         max_nr_patches=8_500,
@@ -24,19 +25,20 @@ class ByChannelDistributedSampler(DistributedSampler):
         shuffle=True,
         seed=0,
     ):
-        super().__init__(dataset=full_dataset, drop_last=drop_last)
+        super().__init__(dataset=dataset, drop_last=drop_last)
 
         self.mode = mode
 
-        self.full_dataset = full_dataset
-        self.subset_indices = subset_indices
+        self.dataset = dataset
+        self.keys = keys
+        self.recompute_freq = recompute_freq
 
         self.drop_last = drop_last
 
         # Group channels in subset_indices by (subject, trial)
         id_to_sr_to_trial_to_channels = {}
-        for idx, channel_idx in enumerate(self.subset_indices):
-            channel_info = self.full_dataset.channel_index[channel_idx]
+        for idx, channel_idx in enumerate(self.keys):
+            channel_info = self.dataset.channel_index[channel_idx]
             subject_id = channel_info["SubjectID"]
             sr = channel_info["sr"]
             trial_idx = channel_info["trial_idx"]
@@ -135,16 +137,14 @@ class ByChannelDistributedSampler(DistributedSampler):
 
                     for idx in channels:
 
-                        channel_idx = self.subset_indices[idx]
-                        channel_info = self.full_dataset.channel_index[channel_idx]
+                        channel_idx = self.keys[idx]
+                        channel_info = self.dataset.channel_index[channel_idx]
 
                         new_patches = self.get_max_nr_patches(
                             sr=channel_info["sr"],
                             dur=channel_info["dur"],
                         )
-                        assert (
-                            new_patches <= self.max_nr_patches
-                        ), f"new_patches > max_nr_patches: {new_patches} > {self.max_nr_patches}"
+
                         assert (
                             channel_info["sr"] == sr
                         ), f"channel_info['sr'] ({channel_info['sr']}) != sr ({sr})"
@@ -166,20 +166,68 @@ class ByChannelDistributedSampler(DistributedSampler):
                             > self.max_nr_patches
                             or current_nr_patches + sep_patches > self.max_nr_patches
                         ):
+                            # Store current batch
                             if current_batch:
                                 assert (
                                     current_nr_patches <= self.max_nr_patches
                                 ), f"1: current_nr_patches={current_nr_patches} > max_nr_patches={self.max_nr_patches}"
                                 self.batch_indices.append(current_batch)
-                            current_batch = []
-                            current_nr_patches = 0
-                            min_batch_dur = float("inf")
+                            # Start a new batch
+                            if new_patches > self.max_nr_patches:
+                                max_durs = [
+                                    int(
+                                        (
+                                            (self.patch_size**2) * self.max_nr_patches
+                                            - sr * win_shift / 2
+                                            - 1
+                                        )
+                                        / (
+                                            sr / self.win_shift_factor / 2
+                                            + 1 / self.win_shift_factor / win_shift
+                                        )
+                                    )
+                                    for win_shift in (
+                                        self.win_shifts
+                                        if sr >= 120
+                                        else self.win_shifts[1:]
+                                    )
+                                ]
+                                max_dur = min(max_durs)
+                                max_dur = int(max_dur)
+                                channel_info["dur"] = int(channel_info["dur"])
+                                # print(
+                                #     f"Splitting {channel_info['dur']}s into parts of {max_dur}s"
+                                # )
+                                for start in range(0, channel_info["dur"], max_dur):
+                                    current_batch = [
+                                        (
+                                            channel_idx,
+                                            start,
+                                            (
+                                                max_dur
+                                                if start + max_dur
+                                                <= channel_info["dur"]
+                                                else (channel_info["dur"] - start)
+                                            ),
+                                        )
+                                    ]
+                                    # print(current_batch)
+                                    self.batch_indices.append(current_batch)
+                                # TODO: here we could change it to have a truncated last part of the signal
+                                current_batch = []
+                                current_nr_patches = 0
+                                min_batch_dur = float("inf")
+                            else:
+                                current_batch = [(channel_idx, 0, channel_info["dur"])]
+                                current_nr_patches = new_patches
+                                min_batch_dur = channel_info["dur"]
 
-                        current_nr_patches += new_patches
-                        if current_batch:
-                            current_nr_patches += sep_patches
-                        current_batch.append(idx)
-                        min_batch_dur = min(min_batch_dur, channel_info["dur"])
+                        else:
+                            current_nr_patches += new_patches
+                            if current_batch:
+                                current_nr_patches += sep_patches
+                            current_batch.append((channel_idx, 0, channel_info["dur"]))
+                            min_batch_dur = min(min_batch_dur, channel_info["dur"])
 
                 if current_batch:
                     assert (

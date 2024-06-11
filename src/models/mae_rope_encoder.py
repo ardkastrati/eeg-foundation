@@ -114,11 +114,7 @@ class EncoderViTRoPE(nn.Module):
             self.reversed_chn_names = {
                 value: key for key, value in self.chn_names.items()
             }
-        print(
-            "[MaskedAutoencoderViTRoPE.__init__] chn_names:",
-            self.chn_names,
-            file=sys.stderr,
-        )
+
         self.channel_encoding_map = nn.ModuleDict(
             {
                 chn: ParameterWrapper(torch.zeros(1, 1, encoder_embed_dim))
@@ -167,6 +163,7 @@ class EncoderViTRoPE(nn.Module):
     def forward(self, x, means, stds, channels, win_size, mask_ratio):
         """ """
         B, C, H, W = x.shape
+        # print("[forward_encoder] NaN in x:", torch.isnan(x).any())
         # print("[forward_encoder] before patch_embed:", x.shape, "(B, C, H, W)")
 
         # Encoder: patch embedding (flatten patches to a sequence)

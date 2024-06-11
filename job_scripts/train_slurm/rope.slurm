@@ -6,8 +6,8 @@
 #SBATCH --open-mode=append
 #SBATCH --job-name=pretrain
 #SBATCH --nodes=1
-#SBATCH --gres=gpu:6
-#SBATCH --ntasks-per-node=6
+#SBATCH --gres=gpu:3
+#SBATCH --ntasks-per-node=3
 #SBATCH --cpus-per-task=10
 #SBATCH --mem=200G
 #SBATCH --nodelist=tikgpu10

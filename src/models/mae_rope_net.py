@@ -62,9 +62,9 @@ class ModularMaskedAutoencoderViTRoPE(nn.Module):
         min_win_size=1 / 2,
         win_shift_factor=1 / 4,
         # Encoder
-        encoder_embed_dim=384,
         encoder_depth=12,
         encoder_block_layers=Flexible_RoPE_Layer_scale_init_Block,
+        encoder_embed_dim=384,
         encoder_num_heads=6,
         encoder_mlp_ratio=4,
         encoder_qkv_bias=True,
@@ -79,9 +79,9 @@ class ModularMaskedAutoencoderViTRoPE(nn.Module):
         encoder_init_scale=1e-4,
         encoder_rope_theta=100.0,
         # Decoder
-        decoder_embed_dim=512,
         decoder_depth=8,
         decoder_block_layers=Flexible_RoPE_Layer_scale_init_Block,
+        decoder_embed_dim=512,
         decoder_num_heads=16,
         decoder_mlp_ratio=4,
         decoder_qkv_bias=True,
@@ -132,8 +132,8 @@ class ModularMaskedAutoencoderViTRoPE(nn.Module):
             max_win_size=max_win_size,
             min_win_size=min_win_size,
             win_shift_factor=win_shift_factor,
-            encoder_embed_dim=encoder_embed_dim,
             encoder_depth=encoder_depth,
+            encoder_embed_dim=encoder_embed_dim,
             encoder_block_layers=encoder_block_layers,
             encoder_num_heads=encoder_num_heads,
             encoder_mlp_ratio=encoder_mlp_ratio,
@@ -163,8 +163,8 @@ class ModularMaskedAutoencoderViTRoPE(nn.Module):
             min_win_size=min_win_size,
             win_shift_factor=win_shift_factor,
             encoder_embed_dim=encoder_embed_dim,
-            decoder_embed_dim=decoder_embed_dim,
             decoder_depth=decoder_depth,
+            decoder_embed_dim=decoder_embed_dim,
             decoder_block_layers=decoder_block_layers,
             decoder_num_heads=decoder_num_heads,
             decoder_mlp_ratio=decoder_mlp_ratio,
@@ -225,24 +225,31 @@ class ModularMaskedAutoencoderViTRoPE(nn.Module):
         target = self.patchify(target, B, H, W)
         # print("[forward_loss] target.shape:", target.shape)
         # print("[forward_loss] pred.shape:", pred.shape)
+        # print("[forward_loss] NaN in target:", torch.isnan(target).any())
 
         # Remove the cls token for loss computation
         pred_meta = pred[:, :nr_meta_patches, :]
         pred = pred[:, nr_meta_patches:, :]
         mask = mask[:, nr_meta_patches:]
+        # print("[forward_loss] NaN in pred:", torch.isnan(pred).any())
+        # print("[forward_loss] NaN in mask:", torch.isnan(mask).any())
 
         # Calculate the squared error
         loss = (pred - target) ** 2
+        # print("[forward_loss] NaN in loss1:", torch.isnan(loss).any())
         # print("[forward_loss] loss.shape:", loss.shape)
 
         # Compute the mean loss over the last dimension
         loss = loss.mean(dim=-1)
+        # print("[forward_loss] NaN in loss2:", torch.isnan(loss).any())
         # print("[forward_loss] loss.shape after mean(dim=-1):", loss.shape)
 
         loss = loss[mask].view(B, -1)
+        # print("[forward_loss] NaN in loss3:", torch.isnan(loss).any())
         # print("[forward_loss] loss.shape after mask:", loss.shape)
 
         mean_loss = loss.mean()
+        # print("[forward_loss] NaN in mean_loss:", torch.isnan(mean_loss).any())
 
         return mean_loss
 

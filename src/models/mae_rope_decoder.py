@@ -130,6 +130,7 @@ class DecoderViTRoPE(nn.Module):
 
         # Decoder: embed the encoder output
         x = self.decoder_embed(x)
+        # print("[forward_decoder] NaN in x:", torch.isnan(x).any())
         # print("[forward_decoder] after decoder_embed:", x.shape, "(B, N, D')")
 
         # Decoder: recompute freqs_cis each batch (for simplicity)

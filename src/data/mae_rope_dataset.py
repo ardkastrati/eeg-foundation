@@ -7,13 +7,37 @@ from torch.utils.data import Dataset
 # == Define Datasets ==
 
 
+class RawDataset(Dataset):
+    def __init__(self, channel_index):
+        self.channel_index = channel_index
+
+    def __getitem__(self, info):
+        idx, start, dur = info
+        channel_info = self.channel_index[idx]
+        signal = channel_info["signal"]
+        signal = signal[
+            int(start * channel_info["sr"]) : int((start + dur) * channel_info["sr"])
+        ]
+        return {
+            "signal": torch.tensor(signal),
+            "path": channel_info["path"],
+            "channel": channel_info["channel"],
+            "sr": channel_info["sr"],
+            "dur": channel_info["dur"],
+        }
+
+
 class ChannelDataset(Dataset):
     def __init__(self, channel_index):
         self.channel_index = channel_index
 
-    def __getitem__(self, idx):
+    def __getitem__(self, info):
+        idx, start, dur = info
         channel_info = self.channel_index[idx]
         signal = np.load(channel_info["path"])
+        signal = signal[
+            int(start * channel_info["sr"]) : int((start + dur) * channel_info["sr"])
+        ]
         return {
             "signal": torch.tensor(signal),
             "path": channel_info["path"],

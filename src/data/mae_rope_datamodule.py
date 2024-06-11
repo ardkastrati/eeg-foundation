@@ -13,6 +13,7 @@ from socket import gethostname
 from pympler import asizeof
 from natsort import natsorted
 
+from sklearn.model_selection import train_test_split
 import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
@@ -34,6 +35,7 @@ class TrainDataModule(LightningDataModule):
         self,
         # Network
         channel_name_map_path="src/data/components/channels_to_id.json",
+        recompute_freq=1,
         patch_size=16,
         max_nr_patches=8_500,
         win_shifts=[0.25, 0.5, 1, 2, 4, 8],
@@ -65,6 +67,7 @@ class TrainDataModule(LightningDataModule):
         self.stor_dirs = stor_dirs
         self.data_index_patterns = data_index_patterns
 
+        self.recompute_freq = recompute_freq
         self.patch_size = patch_size
         self.max_nr_patches = max_nr_patches
         self.win_shifts = win_shifts
@@ -80,6 +83,21 @@ class TrainDataModule(LightningDataModule):
     # == Setup ==========================================================================================================================
 
     def setup(self, stage=None):
+
+        # Load information on what files to exclude
+        test_trial_paths = set()
+        with open(
+            "/home/maxihuber/eeg-foundation/src/data/components/mi_test_paths.json", "r"
+        ) as file:
+            mi_test_paths = json.load(file)
+            test_trial_paths.update(mi_test_paths)
+        with open(
+            "/home/maxihuber/eeg-foundation/src/data/components/erp_test_paths.json",
+            "r",
+        ) as file:
+            erp_test_paths = json.load(file)
+            test_trial_paths.update(erp_test_paths)
+        print("[setup] # Test files:", len(test_trial_paths))
 
         paths_to_data_index = []
 
@@ -99,6 +117,7 @@ class TrainDataModule(LightningDataModule):
         num_trials = 0
         num_signals = 0
         data_seconds = 0
+        nr_trials_excluded = 0
 
         for path_to_data_index in paths_to_data_index:
             with open(path_to_data_index, "r") as index_file:
@@ -106,24 +125,35 @@ class TrainDataModule(LightningDataModule):
                 trial_index = json.load(index_file)
                 for _, trial_info in trial_index.items():
                     # full_trial_index[num_trials] = trial_info
-                    for chn, path, dur in zip(
-                        trial_info["channels"], trial_info["paths"], trial_info["durs"]
+                    if (
+                        "origin_path" in trial_info
+                        and trial_info["origin_path"] in test_trial_paths
                     ):
-                        full_channel_index[num_signals] = {
-                            "path": path,
-                            "channel": chn,
-                            "sr": trial_info["sr"],
-                            "dur": dur,
-                            "trial_idx": num_trials,
-                            "SubjectID": trial_info["SubjectID"],
-                        }
-                        num_signals += 1
-                        data_seconds += dur
+                        nr_trials_excluded += 1
+                        continue
+                    else:
+                        for chn, path, dur in zip(
+                            trial_info["channels"],
+                            trial_info["paths"],
+                            trial_info["durs"],
+                        ):
+                            full_channel_index[num_signals] = {
+                                "path": path,
+                                "channel": chn,
+                                "sr": trial_info["sr"],
+                                "dur": dur,
+                                "trial_idx": num_trials,
+                                "Dataset": trial_info["Dataset"],
+                                "SubjectID": trial_info["SubjectID"],
+                            }
+                            num_signals += 1
+                            data_seconds += dur
                     num_trials += 1
             print(f"[setup] Loaded +{int(data_seconds)} from {path_to_data_index}.")
 
         print(f"[setup] We have data from {num_trials} trials.")
         print(f"[setup] This is {int(data_seconds)} seconds (single-channel).")
+        print(f"[setup] We excluded {nr_trials_excluded} test trials.")
 
         print(
             "[setup] Truncated trial index:",
@@ -135,23 +165,25 @@ class TrainDataModule(LightningDataModule):
             file=sys.stderr,
         )
 
-        full_dataset = ChannelDataset(full_channel_index)
-        # full_dataset = TrialDataset(full_trial_index)
-
-        self.train_size = int(self.train_val_split[0] * len(full_dataset))
-        self.val_size = len(full_dataset) - self.train_size
-
-        print(f"[setup] Train size: {self.train_size}")
-        print(f"[setup] Val size: {self.val_size}")
-
-        self.train_dataset, self.val_dataset = torch.utils.data.random_split(
-            full_dataset, [self.train_size, self.val_size]
+        keys = list(full_channel_index.keys())
+        train_keys, val_keys = train_test_split(
+            keys,
+            train_size=self.train_val_split[0],
+            test_size=self.train_val_split[1],
+            random_state=0,
         )
+
+        train_channel_index = {key: full_channel_index[key] for key in train_keys}
+        val_channel_index = {key: full_channel_index[key] for key in val_keys}
+
+        self.train_dataset = ChannelDataset(train_channel_index)
+        self.val_dataset = ChannelDataset(val_channel_index)
 
         self.train_sampler = ByChannelDistributedSampler(
             mode="train",
-            full_dataset=full_dataset,
-            subset_indices=self.train_dataset.indices,
+            dataset=self.train_dataset,
+            keys=train_keys,
+            recompute_freq=self.recompute_freq,
             patch_size=self.patch_size,
             max_nr_patches=self.max_nr_patches - 500,
             win_shifts=self.win_shifts,
@@ -162,8 +194,9 @@ class TrainDataModule(LightningDataModule):
 
         self.val_sampler = ByChannelDistributedSampler(
             mode="val",
-            full_dataset=full_dataset,
-            subset_indices=self.val_dataset.indices,
+            dataset=self.val_dataset,
+            keys=val_keys,
+            recompute_freq=self.recompute_freq,
             patch_size=self.patch_size,
             max_nr_patches=self.max_nr_patches - 500,
             win_shifts=self.win_shifts,

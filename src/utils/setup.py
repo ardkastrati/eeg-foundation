@@ -13,7 +13,7 @@ def setup_wandb(cfg):
         project=cfg.logger.project,
         entity=cfg.logger.entity,
         group=slurm_job_id,
-        name=f"{gethostname()}-{os.environ['SLURM_PROCID']}",
+        name=f"{slurm_job_id}-{gethostname()}-{os.environ['SLURM_PROCID']}",
         job_type=cfg.logger.job_type,
         dir=f"{cfg.paths.runs_dir}/{slurm_job_id}",
         mode=cfg.logger.mode,

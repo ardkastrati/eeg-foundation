@@ -57,6 +57,7 @@ def main(config, num_chunks, idx):
     local_loader = LocalLoader(
         min_duration=config["min_duration"],
         max_duration=config["max_duration"],
+        split_duration=config["split_duration"],
         patch_size=config["patch_size"],
         max_nr_patches=config["max_nr_patches"],
         win_shifts=config["win_shifts"],

@@ -27,7 +27,7 @@ test-full: ## Run all tests
 	pytest
 
 train: ## Train the model (on local/calling node)
-	python src/train.py experiment=maxim.yaml
+	python src/train.py experiment=rope.yaml
 
 fulltrain:
 	sbatch /home/maxihuber/eeg-foundation/job_scripts/train_slurm/combined_script.slurm
@@ -59,29 +59,41 @@ git:
 # custom:
 # 	srun --time 2:00:00 --gres=gpu:8 --nodelist=tikgpu02 --mem=300G --pty bash -i
 
-ls:
+ls1:
+	ls /dev/shm/mae
+
+ls2:
 	ls /scratch/mae
 
-rm:
+rm1:
+	rm -rf /dev/shm/mae
+
+rm2:
 	rm -rf /scratch/mae
 
 du:
 	du -sh /scratch/mae
 
 cpu:
-	srun --time 700 --gres=gpu:0 --mem=50G --pty bash -i
+	srun --time 700 --gres=gpu:0 --mem=300G --pty bash -i
+
+gpu:
+	srun --time 700 --gres=gpu:1 --mem=300G --pty bash -i
 
 cpu2:
-	srun --time 700 --gres=gpu:0 --mem=50G --nodelist=tikgpu08 --pty bash -i
+	srun --time 700 --gres=gpu:0 --mem=50G --nodelist=artongpu01 --pty bash -i
+
+gpu2:
+	srun --time 700 --gres=gpu:1 --mem=50G --nodelist=tikgpu02 --pty bash -i
 
 cpu10:
-	srun --time 500 --gres=gpu:0 --mem=50G --nodelist=tikgpu10 --pty bash -i
+	srun --time 700 --gres=gpu:0 --mem=50G --nodelist=tikgpu10 --pty bash -i
 
 gpu10:
-	srun --time 500 --gres=gpu:1 --mem=50G --nodelist=tikgpu10 --pty bash -i
+	srun --time 700 --gres=gpu:1 --mem=320G --nodelist=tikgpu10 --pty bash -i
 
 jupyter:
-	jupyter notebook --no-browser --port 5991 --ip $$(hostname -f)
+	jupyter notebook --no-browser --port 5951 --ip $$(hostname -f)
 
 env:
 	conda activate fastenv
