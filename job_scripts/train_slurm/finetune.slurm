@@ -5,9 +5,8 @@
 #SBATCH --nodes=1
 #SBATCH --gres=gpu:0
 #SBATCH --open-mode=append
-#SBATCH --mem=300G
-#SBATCH --time=23:59:00
-#SBATCH --job-name=cli_schizo
+#SBATCH --mem=700G
+#SBATCH --job-name=mi_lr_im
 
 # Exit on errors
 set -o errexit

@@ -66,6 +66,54 @@ def filter_index(
     return filtered_index, index_lens, index_sizes
 
 
+def filter_index_simple(
+    index_paths,
+    path_prefix,
+    min_duration,
+    max_duration,
+    discard_sr,
+    discard_datasets,
+):
+    """
+    Filter the json `data_dir` index based on the specified conditions.
+    """
+    filtered_index = []
+    index_lens = [0] * len(index_paths)
+    print("Filtering data dir", file=sys.stderr)
+
+    # iterate over each data_dir (paths to json indices of the data),
+    # i.e. we have one index for .edf and one for .pkl data
+    nr_files = 0
+    for index_nr, index_path in enumerate(index_paths):
+
+        with open(index_path, "r") as file:
+            index = json.load(file)
+            nr_files += len(index)
+
+        index_size = 0
+
+        for i, index_element in tqdm(
+            enumerate(index), desc="Filtering index", position=0, leave=True
+        ):
+
+            if (
+                index_element["duration"] >= min_duration
+                and index_element["duration"] <= max_duration
+                and index_element["sr"] not in discard_sr
+                and index_element["Dataset"] not in discard_datasets
+            ):
+                # the edf index comes with relative, the csv index with absolute paths
+                if index_element["path"].endswith(".edf"):
+                    index_element["path"] = path_prefix + index_element["path"]
+                filtered_index.append(index_element)
+                index_lens[index_nr] += 1
+
+    print(nr_files, "files found in total", file=sys.stderr)
+    print(index_lens, "files selected per index", file=sys.stderr)
+    print(len(filtered_index), "files selected in total", file=sys.stderr)
+    return filtered_index, index_lens
+
+
 def create_raw(
     data,
     ch_names1,
@@ -115,28 +163,8 @@ class load_path_data:
         logger.setLevel(logging.ERROR)
         mne.set_log_level("WARNING")
 
-    def get_duration(self, index_element):
-        # if index_element["duration"] >= self.max_duration:
-        #     dur = np.inf
-        # else:
-        #     dur = int(index_element["duration"])
-        # return dur
-        return int(index_element["duration"])
-
     def __call__(self, index_element):
-        """
-        Loads data from the given index element's path and returns a dictionary containing channel data.
 
-        Args:
-            index_element (dict): The index element containing information about the data file.
-
-        Returns:
-            dict: A dictionary containing channel data, where the keys are channel names and the values are the flattened data arrays.
-
-        Raises:
-            AssertionError: If the path is invalid.
-
-        """
         if index_element["path"].endswith(".edf"):
             # For EDF: all channels are good at the moment
             eeg_data = mne.io.read_raw_edf(
@@ -176,42 +204,98 @@ class load_path_data:
         return channel_data_dict
 
 
-# class load_path_data:
-#     def __init__(self, min_duration, max_duration):
-#         self.min_duration = min_duration
-#         self.max_duration = max_duration
-#         logger = logging.getLogger("pyprep")
-#         logger.setLevel(logging.ERROR)
-#         mne.set_log_level("WARNING")
+def load_from_index(index_chunk, min_duration, max_duration):
 
-#     def __call__(self, index_element):
+    p_loader = load_path_data(
+        min_duration=min_duration,
+        max_duration=max_duration,
+    )
+    trial_index = {}  # Dict of paths to the saved signals & metadata.
+    channel_set = set()
+    num_trials = 0
+    split_duration = 3_600
 
-#         if index_element["path"].endswith(".edf"):
-#             # For EDF: all channels are good at the moment
-#             eeg_data = mne.io.read_raw_edf(
-#                 index_element["path"],
-#                 include=index_element["channels"],
-#                 preload=True,
-#             )
+    print("Starting to save the trials locally", file=sys.stderr)
 
-#         elif index_element["path"].endswith("pkl"):
-#             # Load DataFrame from pickle
-#             with open(index_element["path"], "rb") as file:
-#                 df = pd.read_pickle(file)
-#                 # Create a mne.Raw to be compatible with the coming processing steps
-#                 eeg_data = create_raw(
-#                     data=df,
-#                     ch_names1=index_element["good_channels"],
-#                     sr=index_element["sr"],
-#                 )
+    for num_processed_elements, index_element in enumerate(
+        tqdm(index_chunk, desc="Filtering index", position=0, leave=True)
+    ):
 
-#         else:
-#             assert False, "Invalid path"
+        sr = index_element["sr"]
+        dur = index_element["duration"]
 
-#         # Add average reference
-#         eeg_data = avg_channel(eeg_data)
+        if dur < min_duration or dur > max_duration:
+            continue
 
-#         return eeg_data
+        channel_data_dict = p_loader(index_element)
+
+        trial_info = {
+            "origin_path": index_element["path"],
+            "num_channels": len(channel_data_dict),
+            "channel_signals": [],
+            "channels": [],
+            "durs": [],
+            "sr": sr,
+            "ref": index_element["ref"],
+            "Dataset": index_element["Dataset"],
+            "SubjectID": index_element["SubjectID"],
+        }
+
+        for channel, channel_signal in channel_data_dict.items():
+            channel_set.add(channel)
+
+            # Convert to u_volt (micro-volt)
+            channel_signal = channel_signal * 1_000_000
+
+            # Find maximum duration which does not nuke CUDA memory
+            dur = len(channel_signal) / index_element["sr"]
+
+            if dur > split_duration:
+                print(
+                    f"Chopping signal of length {dur} seconds into chunks of max {split_duration} seconds."
+                )
+
+                # Calculate the number of samples in max_dur
+                max_samples = int(split_duration * sr)
+
+                # Split channel_signal into chunks of max_samples size
+                signal_chunks = [
+                    channel_signal[i : i + max_samples]
+                    for i in range(0, len(channel_signal), max_samples)
+                ]
+
+                # Calculate the duration of each chunk in seconds
+                durs = [len(chunk) / sr for chunk in signal_chunks]
+                print(durs)
+            else:
+                signal_chunks = [channel_signal]
+                durs = [dur]
+
+            for signal, dur in zip(signal_chunks, durs):
+
+                if dur < min_duration or dur > max_duration:
+                    continue
+
+                if abs(int(len(signal) - sr * dur)) > 2:
+                    print(index_element["path"])
+
+                # Store the path to the signal and some metadata.
+                trial_info["channel_signals"].append(signal)
+                trial_info["channels"].append(channel)
+                trial_info["durs"].append(dur)
+            signal_chunks.clear()
+
+        # == stored data for all channels to different files
+        trial_index[num_trials] = trial_info
+        num_trials += 1
+        # == stored everything for this index_element (trial) ==
+
+    # == stored all index_elements for this index_chunk ==
+
+    # print(f"Saved {num_trials} trials on process {thread_id}", file=sys.stderr)
+    print(f"Saved {num_trials} trials on process {0}", file=sys.stderr)
+
+    return trial_index
 
 
 class LocalLoader:

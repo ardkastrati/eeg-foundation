@@ -29,10 +29,19 @@ from src.data.transforms import (
     normalize_spg,
 )
 
+from src.utils.preloading.utils import filter_index_simple, load_from_index
+
 
 class TrainDataModule(LightningDataModule):
     def __init__(
         self,
+        # Preloading
+        source_indices,
+        path_prefix="",
+        min_duration=0,
+        max_duration=3_600,
+        discard_sr=[],
+        discard_datasets=[],
         # Network
         channel_name_map_path="src/data/components/channels_to_id.json",
         recompute_freq=1,
@@ -53,6 +62,13 @@ class TrainDataModule(LightningDataModule):
         data_index_patterns="data_index_*.txt",
     ):
         super().__init__()
+
+        self.source_indices = source_indices
+        self.path_prefix = path_prefix
+        self.min_duration = min_duration
+        self.max_duration = max_duration
+        self.discard_sr = discard_sr
+        self.discard_datasets = discard_datasets
 
         with open(channel_name_map_path, "r") as file:
             self.channel_name_map = json.load(file)
@@ -83,6 +99,60 @@ class TrainDataModule(LightningDataModule):
     # == Setup ==========================================================================================================================
 
     def setup(self, stage=None):
+        index, index_lens = filter_index_simple(
+            index_paths=self.source_indices,
+            path_prefix=self.path_prefix,
+            min_duration=self.min_duration,
+            max_duration=self.max_duration,
+            discard_sr=self.discard_sr,
+            discard_datasets=self.discard_datasets,
+        )
+
+        trial_index = load_from_index(
+            index_chunk=index,
+            min_duration=self.min_duration,
+            max_duration=self.max_duration,
+        )
+
+        full_channel_index = {}
+        num_trials = 0
+        num_signals = 0
+        data_seconds = 0
+        test_trial_paths = set()
+        nr_trials_excluded = 0
+
+        for _, trial_info in trial_index.items():
+            # full_trial_index[num_trials] = trial_info
+            if (
+                "origin_path" in trial_info
+                and trial_info["origin_path"] in test_trial_paths
+            ):
+                nr_trials_excluded += 1
+                continue
+            else:
+                for chn, signal, dur in zip(
+                    trial_info["channels"],
+                    trial_info["channel_signals"],
+                    trial_info["durs"],
+                ):
+                    full_channel_index[num_signals] = {
+                        "signal": signal,
+                        "channel": chn,
+                        "sr": trial_info["sr"],
+                        "dur": dur,
+                        "trial_idx": num_trials,
+                        "Dataset": trial_info["Dataset"],
+                        "SubjectID": trial_info["SubjectID"],
+                    }
+                    num_signals += 1
+                    data_seconds += dur
+            num_trials += 1
+
+        print(f"[setup] We have data from {num_trials} trials.")
+        print(f"[setup] This is {int(data_seconds)} seconds (single-channel).")
+        print(f"[setup] We excluded {nr_trials_excluded} test trials.")
+
+    def setup_old(self, stage=None):
 
         # Load information on what files to exclude
         test_trial_paths = set()

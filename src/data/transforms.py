@@ -177,15 +177,6 @@ class custom_fft:
             self.fft = self.fft.to("cuda")
 
     def __call__(self, data):
-        """
-        Apply short-time Fourier transform (STFT) to the input data.
-
-        Args:
-            data (torch.Tensor): The input data.
-
-        Returns:
-            torch.Tensor: The transformed data.
-        """
         spg = self.fft(data)
         spg = spg**2
         return spg

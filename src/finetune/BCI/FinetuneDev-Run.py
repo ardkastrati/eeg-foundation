@@ -106,6 +106,10 @@ with open(
     )
 task_channels = pkl_channels | cli_channels
 
+
+########################################################################################################################
+# Clinical JSONs
+
 cli_class = {
     "class_name": "Clinical",
     "time_col": "Time in Seconds",
@@ -150,6 +154,7 @@ sex = {
 
 
 ########################################################################################################################
+# Motor-Imagery JSONs
 
 mi_class = {
     "class_name": "Motor Imagery",
@@ -282,6 +287,7 @@ pronation_supination_imaginary = {
 }
 
 ########################################################################################################################
+# ERP JSONs
 
 erp_class = {
     "class_name": "Error-Related Potential",
@@ -325,6 +331,7 @@ errp = {
 }
 
 ########################################################################################################################
+# EyeNet JSONs
 
 eye_class = {
     "class_name": "EyeNet",
@@ -377,20 +384,19 @@ eye_position = {
     "out_dim": 2,
 }
 
-used_class = cli_class
-# used_class = mi_class
+########################################################################################################################
+# Select the class and task
+
+# used_class = cli_class
+used_class = mi_class
 # used_class = erp_class
 # used_class = eye_class
 
-class_name = used_class["class_name"]
-time_col = used_class["time_col"]
-prefix_filepath = used_class["prefix_filepath"]
-load_mode = used_class["load_mode"]
 
 # used_task = age
 # used_task = depression
 # used_task = parkinsons
-used_task = schizophrenia
+# used_task = schizophrenia
 # used_task = sex
 #
 # used_task = eye_open_closed
@@ -398,7 +404,7 @@ used_task = schizophrenia
 # used_task = flexion_extension_imaginary
 # used_task = flexion_extension_real
 # used_task = grasp_real
-# used_task = lr_imaginary
+used_task = lr_imaginary
 # used_task = lr_real
 # used_task = mi_task_body_parts_real
 # used_task = mi_task_body_parts_imagined
@@ -413,6 +419,10 @@ used_task = schizophrenia
 # used_task = eye_lr
 # used_task = eye_position
 
+class_name = used_class["class_name"]
+time_col = used_class["time_col"]
+prefix_filepath = used_class["prefix_filepath"]
+load_mode = used_class["load_mode"]
 task_name = used_task["task_name"]
 task_type = used_task["task_type"]
 json_path = used_task["json_path"]
@@ -494,11 +504,6 @@ def load_file_data(data_index, task_channels):
             # Load and concatenate dataframe
             input_files = sample["input"]
 
-            if short_mode:
-                start_index = int(len(input_files) * 0.2)
-                end_index = int(len(input_files) * 0.4)
-                input_files = input_files[start_index:end_index]
-
             df = pd.DataFrame()
             for file in input_files:
                 if load_mode != 1:
@@ -515,6 +520,8 @@ def load_file_data(data_index, task_channels):
             length = int(sample["length"]) if "length" in sample else int(sample["end"])
             if load_mode != 1:
                 df = df.iloc[start:length, :]
+                if short_mode:
+                    df = df.iloc[: int(len(df) * 0.5), :]
             else:
                 df = df.loc[start : start + length, :]
 
@@ -579,12 +586,6 @@ if load_mode == 0:
     test_data, test_outputs, test_sr, test_dur, test_channels, test_datasets = (
         load_file_data(test_index, task_channels)
     )
-    # train_data, train_outputs, train_sr, train_dur, train_channels, train_datasets = balance_dataset(train_data,
-    #                                                                                                 train_outputs,
-    #                                                                                                 train_sr,
-    #                                                                                                 train_dur,
-    #                                                                                                 train_channels,
-    #                                                                                                 train_datasets)
 elif load_mode == 1:
     train_data, train_outputs, train_sr, train_dur, train_channels, train_datasets = (
         load_file_data(train_index, task_channels)
@@ -781,7 +782,6 @@ def resample_signals(data, srs, target_sfreq):
 
 # Function to pad or truncate signals to a common length
 def pad_or_truncate_signals(data, common_length):
-    padded_data = {}
     for idx, signal in tqdm(data.items(), desc="Pad/Truncate signals"):
         signal_length = signal.shape[1]
         if signal_length < common_length:
@@ -789,10 +789,8 @@ def pad_or_truncate_signals(data, common_length):
             signal_padded = np.pad(signal, ((0, 0), (0, pad_width)), mode="constant")
         else:
             signal_padded = signal[:, :common_length]
-        padded_data[idx] = torch.tensor(
-            signal_padded.clone().detach(), dtype=torch.float32
-        )
-    return padded_data
+        data[idx] = torch.tensor(signal_padded.clone().detach(), dtype=torch.float32)
+    return data
 
 
 # Function to create MNE Epochs object from data
