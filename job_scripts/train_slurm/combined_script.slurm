@@ -3,17 +3,26 @@
 #SBATCH --mail-type=ALL                 # Mail configuration: NONE, BEGIN, END, FAIL, REQUEUE, ALL
 #SBATCH --output=/itet-stor/maxihuber/net_scratch/runs/%A/preloading/%A_%a.out
 #SBATCH --error=/itet-stor/maxihuber/net_scratch/runs/%A/preloading/%A_%a.err
-#SBATCH --job-name=load-and-train       # Combined job name
-#SBATCH --array=5-5                     # Creates 5 jobs for preloading
+#SBATCH --job-name=pretrain             # Combined job name
+#SBATCH --array=7-7                     # Creates 5 jobs for preloading
 #SBATCH --nodes=1                       # All tasks on one node for preloading
-#SBATCH --mem=100G                      # Memory per array job
-#SBATCH --nodelist=tikgpu02             # Node selection for preloading
+#SBATCH --mem=300G                      # Memory per array job
+#SBATCH --nodelist=tikgpu10             # Node selection for preloading
 
 # Create directory for job
 mkdir -p /itet-stor/maxihuber/net_scratch/runs/$SLURM_ARRAY_JOB_ID
 
 # Exit on errors
 set -o errexit
+
+# Function to execute upon script exit
+loadcleanup() {
+    echo "Loading crashed at:     $(date)"
+    echo "Progressing with training:     $(date)"
+    sbatch /home/maxihuber/eeg-foundation/job_scripts/train_slurm/rope.slurm
+}
+
+trap loadcleanup EXIT
 
 # Initialize Conda environment
 source /itet-stor/maxihuber/net_scratch/conda/etc/profile.d/conda.sh
@@ -26,16 +35,16 @@ cd /home/maxihuber/eeg-foundation/
 
 # Define variables
 num_chunks=$(($SLURM_ARRAY_TASK_MAX - $SLURM_ARRAY_TASK_MIN + 1))
-echo "Number of incomplete tasks: ${num_chunks}"
+echo "Number of tasks: ${num_chunks}"
 
 # Run the Python script for preloading
-python /home/maxihuber/eeg-foundation/src/utils/preloading/preload_chunk.py $num_chunks $SLURM_ARRAY_TASK_ID
+srun python /home/maxihuber/eeg-foundation/src/utils/preloading/preload_chunk.py $num_chunks $SLURM_ARRAY_TASK_ID
 
 # TODO: remove for actual training
-exit 0
+# exit 0
 
 # Check if this is the last array job, if so continue to training
-if [[ $SLURM_ARRAY_TASK_ID -eq $((num_chunks - 1)) ]]; then
+if [[ $($SLURM_ARRAY_TASK_ID - $SLURM_ARRAY_TASK_MIN) -eq $((num_chunks - 1)) ]]; then
     # Check if all array jobs are complete
     ARRAY_JOB_ID=$SLURM_ARRAY_JOB_ID
 
@@ -70,22 +79,22 @@ if [[ $SLURM_ARRAY_TASK_ID -eq $((num_chunks - 1)) ]]; then
     export SLURM_OUTPUT="${TRAIN_JOB_DIR}/train_${ARRAY_JOB_ID}.out"
     export SLURM_ERROR="${TRAIN_JOB_DIR}/train_${ARRAY_JOB_ID}.err"
     export NODES=1
-    export GPU=1
+    export GPU=5
     export CPUS=10
-    export MEM=100G
+    export MEM=250G
 
     # Training job configuration
     sbatch <<EOF
 #!/bin/bash
 #SBATCH --output=${SLURM_OUTPUT}
 #SBATCH --error=${SLURM_ERROR}
+#SBATCH --open-mode=append
 #SBATCH --nodes=${NODES}
 #SBATCH --gres=gpu:${GPU}
-#SBATCH --ntasks-per-node=1
+#SBATCH --ntasks-per-node=${GPU}
 #SBATCH --cpus-per-task=${CPUS}
-#SBATCH --open-mode=append
 #SBATCH --mem=${MEM}
-#SBATCH --nodelist=tikgpu05
+#SBATCH --nodelist=tikgpu10
 
 # Exit on errors
 set -o errexit
@@ -119,7 +128,7 @@ done
 
 # Binary or script to execute
 wandb login
-srun python /home/maxihuber/eeg-foundation/src/train.py experiment=maxim.yaml || echo "Training script failed with exit code $?"
+srun python /home/maxihuber/eeg-foundation/src/train.py experiment=rope.yaml || echo "Training script failed with exit code $?"
 
 # End the script with exit code 0
 exit 0

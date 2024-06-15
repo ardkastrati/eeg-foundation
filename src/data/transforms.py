@@ -177,25 +177,16 @@ class custom_fft:
             self.fft = self.fft.to("cuda")
 
     def __call__(self, data):
-        """
-        Apply short-time Fourier transform (STFT) to the input data.
-
-        Args:
-            data (torch.Tensor): The input data.
-
-        Returns:
-            torch.Tensor: The transformed data.
-        """
         spg = self.fft(data)
         spg = spg**2
         return spg
 
 
-def crop_spg(spg):
+def crop_spg(spg, patch_size):
     # Crop spg to the nearest multiple of 16 in both dimensions
     # Integer division and multiplication to find the nearest multiple
-    new_height = (spg.shape[0] // 16) * 16
-    new_width = (spg.shape[1] // 16) * 16
+    new_height = (spg.shape[0] // patch_size) * patch_size
+    new_width = (spg.shape[1] // patch_size) * patch_size
     spg = spg[:new_height, :new_width]  # Crop both dimensions
     return spg
 
@@ -223,21 +214,36 @@ def crop_and_normalize_spg(spg, time_steps):
 
 
 def normalize_spg(spg):
+    # Get frequency bin-wise means, stds
+    freq_means = spg[:, :].mean(dim=1, keepdim=True)
+    freq_stds = spg[:, :].std(dim=1, keepdim=True)
+    # Divide each frequency bin by its mean
+    normalized_spg = spg[:, :] / (freq_means + 1e-8)
+    # Transform to decibel-scale
+    db_spg = 10 * torch.log10(normalized_spg + 1e-8)
+    db_means = 10 * torch.log10(freq_means + 1e-8)
+    db_stds = 10 * torch.log10(freq_stds + 1e-8)
+    return db_spg, db_means, db_stds
+
+
+def normalize_spg_OLD(spg):
     # Divide spectrogram by frequency bin-wise means
     freq_means = spg[:, :].mean(dim=1, keepdim=True)
+    freq_stds = spg[:, :].std(dim=1, keepdim=True)
     # Divide each frequency bin by its mean
-    normalized_spg = spg[:, :] / freq_means
+    normalized_spg = (spg[:, :] - freq_means) / freq_stds
     # Transform to decibel-scale
     db_spg = 10 * torch.log10(normalized_spg)
     db_means = 10 * torch.log10(freq_means)
-    return db_spg, db_means
+    db_stds = 10 * torch.log10(freq_stds)
+    return db_spg, db_means, db_stds
 
 
 def plot_spg(spg, sr, dur):
-    plt.pcolormesh(spg, shading="auto", cmap="viridis")
+    plt.pcolormesh(spg, shading="auto", cmap="RdBu")
     plt.ylabel("Frequency Bins")
-    plt.xlabel("steps")
-    plt.title(f"Spectrogram: {sr}, {dur}")
+    plt.xlabel("Steps")
+    plt.title(f"Spectrogram: [sr={sr}, dur={dur}]")
     plt.colorbar(label="")
     plt.show()
 

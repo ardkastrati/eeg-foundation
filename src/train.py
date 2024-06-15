@@ -5,11 +5,13 @@ from typing import Any, Dict, List, Optional, Tuple
 import hydra
 import psutil
 from lightning import Callback, LightningDataModule, LightningModule
+from lightning.pytorch.callbacks import LearningRateMonitor
 from lightning.pytorch.accelerators import find_usable_cuda_devices
 from omegaconf import DictConfig
 
 import lightning as L
 import rootutils
+import torch
 
 rootutils.setup_root(__file__, indicator=".project-root", pythonpath=True)
 # ------------------------------------------------------------------------------------ #
@@ -29,8 +31,8 @@ rootutils.setup_root(__file__, indicator=".project-root", pythonpath=True)
 # more info: https://github.com/ashleve/rootutils
 # ------------------------------------------------------------------------------------ #
 
-from src.models.mae_module import MAEModule
 from src.models.mae_rope_module import MAEModuleRoPE
+from src.models.mae_rope_net import ModularMaskedAutoencoderViTRoPE
 from src.utils import (
     RankedLogger,
     extras,
@@ -59,6 +61,16 @@ def train(cfg: DictConfig) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     # set seed for random number generators in pytorch, numpy and python.random
     L.seed_everything(42, workers=True)
 
+    # == Instantiate Loggers ==
+
+    log.info("Instantiating loggers...")
+    # logger = hydra.utils.instantiate(
+    #     cfg.logger,
+    #     dir=f"{cfg.paths.runs_dir}/{os.getenv('SLURM_JOB_ID')}",
+    #     # group=f"{os.getenv('SLURM_JOB_ID')}",
+    # )
+    setup_wandb(cfg)
+
     # == Instantiate Callbacks ==
 
     log.info("Instantiating callbacks...")
@@ -75,16 +87,8 @@ def train(cfg: DictConfig) -> Tuple[Dict[str, Any], Dict[str, Any]]:
             log_epoch_freq=cfg.debug.log_epoch_freq,
         )
     )
-
-    # == Instantiate Loggers ==
-
-    log.info("Instantiating loggers...")
-    # logger = hydra.utils.instantiate(
-    #     cfg.logger,
-    #     dir=f"{cfg.paths.runs_dir}/{os.getenv('SLURM_JOB_ID')}",
-    #     # group=f"{os.getenv('SLURM_JOB_ID')}",
-    # )
-    setup_wandb(cfg)
+    lr_monitor = LearningRateMonitor(logging_interval="step")
+    callbacks.append(lr_monitor)
 
     # == Instantiate DataModule ==
 
@@ -98,7 +102,19 @@ def train(cfg: DictConfig) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         checkpoint_path = cfg.restore_from_checkpoint_path
         if os.path.exists(checkpoint_path):
             log.info(f"Restoring model from checkpoint: {checkpoint_path}")
-            model: LightningModule = MAEModule.load_from_checkpoint(checkpoint_path)
+            # checkpoint = torch.load(checkpoint_path, map_location=torch.device("cpu"))
+            # model = MAEModuleRoPE.load_from_checkpoint(checkpoint_path)
+            # net: torch.nn.Module = hydra.utils.instantiate(cfg.model.net)
+            # model.net = net
+            # state_dict = {
+            #     key.replace("net.", ""): value
+            #     for key, value in checkpoint["state_dict"].items()
+            # }
+            # model.net.load_state_dict(state_dict)
+            # model.optimizer = model.configure_optimizers()
+            # model.optimizer.load_state_dict(checkpoint["optimizer_states"][0])
+            # model.scheduler.load_state_dict(checkpoint["scheduler_states"][0])
+            model: LightningModule = hydra.utils.instantiate(cfg.model)
         else:
             log.error(f"Checkpoint path does not exist: {checkpoint_path}")
             raise FileNotFoundError(

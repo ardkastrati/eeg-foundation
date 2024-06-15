@@ -34,45 +34,23 @@ class PatchEmbed(nn.Module):
 # ====Random Masking==============================================================================================================
 
 
-def random_masking_smart(batch, mask_ratio, nr_meta_tokens):
-    B, N, D = batch.shape
+def random_masking_smart(x, mask_ratio, nr_meta_tokens):
+    B, N, D = x.shape
 
     num_tokens_to_mask = int((N - nr_meta_tokens) * mask_ratio)
 
     rand_indices, _ = (
-        torch.rand(B, N - nr_meta_tokens, device=batch.device)
+        torch.rand(B, N - nr_meta_tokens, device=x.device)
         .argsort(dim=1)[:, :num_tokens_to_mask]
         .sort(dim=1)
     )
     rand_indices += nr_meta_tokens
 
     # Boolean mask
-    mask = torch.zeros(B, N, dtype=torch.bool, device=batch.device)
+    mask = torch.zeros(B, N, dtype=torch.bool, device=x.device)
     mask.scatter_(1, rand_indices, True)
 
     # Zero out the patches at the chosen indices
-    batch.masked_fill_(mask.unsqueeze(-1), 0)
+    x = x.masked_fill(mask.unsqueeze(-1), 0)
 
-    # Extract the masked elements
-    # masked_batch = batch[mask].view(B, num_tokens_to_mask, D)
-
-    return batch, rand_indices, mask
-
-
-# def random_masking_smart(batch, mask_ratio, nr_meta_tokens):
-
-#     B, N, D = batch.shape
-
-#     # Number of patches to mask
-#     num_masked = int((N - nr_meta_tokens) * mask_ratio)
-
-#     # Generate random indices to mask
-#     rand_indices = torch.rand(B, N - nr_meta_tokens, device=batch.device).argsort(dim=1)
-#     rand_indices += nr_meta_tokens
-
-#     mask_indices = rand_indices[:, :num_masked]
-
-#     # Zero out the patches at the chosen indices
-#     batch.scatter_(1, mask_indices.unsqueeze(-1).expand(-1, -1, D), 0)
-
-#     return batch, mask_indices
+    return x, mask

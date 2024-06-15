@@ -216,6 +216,55 @@ class Flexible_RoPE_Layer_scale_init_Block(Layer_scale_init_Block):
         return x
 
 
+# TODO: cleaner solution but it's ok for the moment
+def select_freqs_cis(self, freqs_cis, H, W, win_size, device):
+    h = H // self.patch_size
+    w = W // self.patch_size
+
+    win_shift = win_size * self.win_shift_factor
+
+    # 1. Compute selection parameters
+    y_nr_patches = h
+    y_jump = int(self.max_win_size / win_size)
+
+    x_nr_patches = w
+    x_jump = int(win_shift / self.min_win_shift)
+
+    # print("[select_freqs_cis] win_size:", win_size)
+    # print(f"[select_freqs_cis] h: {h}, w: {w}")
+    # print(
+    #     f"[select_freqs_cis] y_nr_patches: {y_nr_patches}, x_nr_patches: {x_nr_patches}"
+    # )
+    # print(f"[select_freqs_cis] y_jump: {y_jump}, x_jump: {x_jump}")
+
+    # print("[select_freqs_cis] freqs_cis.shape:", freqs_cis.shape)
+    # print(
+    #     f"[select_freqs_cis] max_y_patches: {self.max_y_patches}, max_x_patches: {self.max_x_patches}",
+    # )
+    assert (
+        freqs_cis.shape[0] == self.max_y_patches * self.max_x_patches
+    ), "freqs_cis shape does not match the expected shape."
+
+    # 2. Select the freqs_cis rows
+    # freqs_cis.shape = (N, d_head/2), where d_head = embed_dim // num_heads and /2 due to complex numbers
+    freqs_cis_selected = []
+    for i in range(0, y_nr_patches):
+        row_start = i * self.max_x_patches * y_jump
+        for j in range(0, x_nr_patches):
+            freqs_cis_selected.append(freqs_cis[row_start + j * x_jump])
+    freqs_cis_selected = torch.stack(freqs_cis_selected)
+
+    # Send the newly created tensor to the same device as freqs_cis
+    freqs_cis_selected = freqs_cis_selected.to(device)
+    # print("[select_freqs_cis] freqs_cis.device:", freqs_cis.device)
+    # print("[select_freqs_cis] freqs_cis_selected.device:", freqs_cis_selected.device)
+
+    # print("[select_freqs_cis] freqs_cis_selected.shape:", freqs_cis_selected.shape)
+    # assert freqs_cis_selected.shape[0] == h * w
+
+    return freqs_cis_selected
+
+
 class rope_vit_models(vit_models):
     def __init__(self, rope_theta=100.0, rope_mixed=False, use_ape=False, **kwargs):
         super().__init__(**kwargs)

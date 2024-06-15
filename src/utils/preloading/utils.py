@@ -66,45 +66,70 @@ def filter_index(
     return filtered_index, index_lens, index_sizes
 
 
+def filter_index_simple(
+    index_paths,
+    path_prefix,
+    min_duration,
+    max_duration,
+    discard_sr,
+    discard_datasets,
+):
+    """
+    Filter the json `data_dir` index based on the specified conditions.
+    """
+    filtered_index = []
+    index_lens = [0] * len(index_paths)
+    print("Filtering data dir", file=sys.stderr)
+
+    # iterate over each data_dir (paths to json indices of the data),
+    # i.e. we have one index for .edf and one for .pkl data
+    nr_files = 0
+    for index_nr, index_path in enumerate(index_paths):
+
+        with open(index_path, "r") as file:
+            index = json.load(file)
+            nr_files += len(index)
+
+        index_size = 0
+
+        for i, index_element in tqdm(
+            enumerate(index), desc="Filtering index", position=0, leave=True
+        ):
+
+            if (
+                index_element["duration"] >= min_duration
+                and index_element["duration"] <= max_duration
+                and index_element["sr"] not in discard_sr
+                and index_element["Dataset"] not in discard_datasets
+            ):
+                # the edf index comes with relative, the csv index with absolute paths
+                if index_element["path"].endswith(".edf"):
+                    index_element["path"] = path_prefix + index_element["path"]
+                filtered_index.append(index_element)
+                index_lens[index_nr] += 1
+
+    print(nr_files, "files found in total", file=sys.stderr)
+    print(index_lens, "files selected per index", file=sys.stderr)
+    print(len(filtered_index), "files selected in total", file=sys.stderr)
+    return filtered_index, index_lens
+
+
 def create_raw(
     data,
     ch_names1,
     sr,
     ch_names2=None,
 ):
-    """
-    Create a raw MNE object from EEG data.
-
-    Parameters:
-        data (pandas.DataFrame): The EEG data.
-        ch_names1 (list): The channel names for the EEG data.
-        sr (float): The sampling rate of the EEG data.
-        ch_names2 (list, optional): The channel names for the MNE object. If not provided, it defaults to ch_names1.
-
-    Returns:
-        raw (mne.io.RawArray): The raw MNE object.
-    """
     if ch_names2 == None:
         ch_names2 = ch_names1
     ch_types = ["eeg" for _ in range(len(ch_names1))]
     info = mne.create_info(ch_names2, ch_types=ch_types, sfreq=sr)
-    eeg_data = (
-        np.array(data[ch_names1].T, dtype="float") / 1_000_000
-    )  # in Volt # TODO not sure if each dataset is in uv
+    eeg_data = np.array(data[ch_names1].T, dtype="float") / 1_000_000
     raw = mne.io.RawArray(eeg_data, info)
     return raw
 
 
 def avg_channel(raw):
-    """
-    Applies average referencing to the given raw data.
-
-    Parameters:
-        raw (Raw): The raw data to be processed.
-
-    Returns:
-        Raw: The raw data with average referencing applied.
-    """
     avg = raw.copy().add_reference_channels(ref_channels="AVG_REF")
     avg = avg.set_eeg_reference(ref_channels="average")
     return avg
@@ -138,28 +163,8 @@ class load_path_data:
         logger.setLevel(logging.ERROR)
         mne.set_log_level("WARNING")
 
-    def get_duration(self, index_element):
-        # if index_element["duration"] >= self.max_duration:
-        #     dur = np.inf
-        # else:
-        #     dur = int(index_element["duration"])
-        # return dur
-        return int(index_element["duration"])
-
     def __call__(self, index_element):
-        """
-        Loads data from the given index element's path and returns a dictionary containing channel data.
 
-        Args:
-            index_element (dict): The index element containing information about the data file.
-
-        Returns:
-            dict: A dictionary containing channel data, where the keys are channel names and the values are the flattened data arrays.
-
-        Raises:
-            AssertionError: If the path is invalid.
-
-        """
         if index_element["path"].endswith(".edf"):
             # For EDF: all channels are good at the moment
             eeg_data = mne.io.read_raw_edf(
@@ -199,12 +204,108 @@ class load_path_data:
         return channel_data_dict
 
 
+def load_from_index(index_chunk, min_duration, max_duration):
+
+    p_loader = load_path_data(
+        min_duration=min_duration,
+        max_duration=max_duration,
+    )
+    trial_index = {}  # Dict of paths to the saved signals & metadata.
+    channel_set = set()
+    num_trials = 0
+    split_duration = 3_600
+
+    print("Starting to save the trials locally", file=sys.stderr)
+
+    for num_processed_elements, index_element in enumerate(
+        tqdm(index_chunk, desc="Filtering index", position=0, leave=True)
+    ):
+
+        sr = index_element["sr"]
+        dur = index_element["duration"]
+
+        if dur < min_duration or dur > max_duration:
+            continue
+
+        channel_data_dict = p_loader(index_element)
+
+        trial_info = {
+            "origin_path": index_element["path"],
+            "num_channels": len(channel_data_dict),
+            "channel_signals": [],
+            "channels": [],
+            "durs": [],
+            "sr": sr,
+            "ref": index_element["ref"],
+            "Dataset": index_element["Dataset"],
+            "SubjectID": index_element["SubjectID"],
+        }
+
+        for channel, channel_signal in channel_data_dict.items():
+            channel_set.add(channel)
+
+            # Convert to u_volt (micro-volt)
+            channel_signal = channel_signal * 1_000_000
+
+            # Find maximum duration which does not nuke CUDA memory
+            dur = len(channel_signal) / index_element["sr"]
+
+            if dur > split_duration:
+                print(
+                    f"Chopping signal of length {dur} seconds into chunks of max {split_duration} seconds."
+                )
+
+                # Calculate the number of samples in max_dur
+                max_samples = int(split_duration * sr)
+
+                # Split channel_signal into chunks of max_samples size
+                signal_chunks = [
+                    channel_signal[i : i + max_samples]
+                    for i in range(0, len(channel_signal), max_samples)
+                ]
+
+                # Calculate the duration of each chunk in seconds
+                durs = [len(chunk) / sr for chunk in signal_chunks]
+                print(durs)
+            else:
+                signal_chunks = [channel_signal]
+                durs = [dur]
+
+            for signal, dur in zip(signal_chunks, durs):
+
+                if dur < min_duration or dur > max_duration:
+                    continue
+
+                if abs(int(len(signal) - sr * dur)) > 2:
+                    print(index_element["path"])
+
+                # Store the path to the signal and some metadata.
+                trial_info["channel_signals"].append(signal)
+                trial_info["channels"].append(channel)
+                trial_info["durs"].append(dur)
+            signal_chunks.clear()
+
+        # == stored data for all channels to different files
+        trial_index[num_trials] = trial_info
+        num_trials += 1
+        # == stored everything for this index_element (trial) ==
+
+    # == stored all index_elements for this index_chunk ==
+
+    # print(f"Saved {num_trials} trials on process {thread_id}", file=sys.stderr)
+    print(f"Saved {num_trials} trials on process {0}", file=sys.stderr)
+
+    return trial_index
+
+
 class LocalLoader:
     def __init__(
         self,
         min_duration=1,
+        max_duration=1_000_000,
+        split_duration=3_600,
         patch_size=16,
-        max_nr_patches=8_500,
+        max_nr_patches=7_500,
         win_shifts=[0.25, 0.5, 1, 2, 4, 8],
         win_shift_factor=0.25,
         num_threads=1,
@@ -212,6 +313,8 @@ class LocalLoader:
     ):
 
         self.min_duration = min_duration
+        self.max_duration = max_duration
+        self.split_duration = split_duration
         self.patch_size = patch_size
         self.max_nr_patches = max_nr_patches
         self.win_shifts = win_shifts
@@ -295,11 +398,12 @@ class LocalLoader:
             channel_data_dict = p_loader(index_element)
 
             trial_info = {
+                "origin_path": index_element["path"],
                 "num_channels": len(channel_data_dict),
                 "channels": [],
                 "paths": [],
                 "sr": sr,
-                "dur": dur,
+                "durs": [],
                 "ref": index_element["ref"],
                 "Dataset": index_element["Dataset"],
                 "SubjectID": index_element["SubjectID"],
@@ -312,37 +416,36 @@ class LocalLoader:
                 channel_signal = channel_signal * 1_000_000
 
                 # Find maximum duration which does not nuke CUDA memory
-                patches = self.get_max_nr_patches(sr, dur)
-                if patches > self.max_nr_patches:
-                    # Split channel_signal 1-d tensor into chunks of max_dur duration
-                    # Did some arithmetic to get the formula right, it's just nr_x_patches * nr_y_patches
-                    #  rearranged for duration, and we iterate over the full win_shift space
-                    max_durs = [
-                        int(
-                            (
-                                (self.patch_size**2) * self.max_nr_patches
-                                - sr * win_shift / 2
-                                - 1
-                            )
-                            / (
-                                sr / self.win_shift_factor / 2
-                                + 1 / self.win_shift_factor / win_shift
-                            )
-                        )
-                        for win_shift in (
-                            self.win_shifts if sr >= 120 else self.win_shifts[1:]
-                        )
-                    ]
-                    max_dur = min(max_durs)
-                    jump = int(sr * max_dur)
+                dur = len(channel_signal) / index_element["sr"]
+
+                if dur > self.split_duration:
+                    print(
+                        f"Chopping signal of length {dur} seconds into chunks of max {self.split_duration} seconds."
+                    )
+
+                    # Calculate the number of samples in max_dur
+                    max_samples = int(self.split_duration * sr)
+
+                    # Split channel_signal into chunks of max_samples size
                     signal_chunks = [
-                        channel_signal[i : i + jump]
-                        for i in range(0, len(channel_signal), jump)
+                        channel_signal[i : i + max_samples]
+                        for i in range(0, len(channel_signal), max_samples)
                     ]
+
+                    # Calculate the duration of each chunk in seconds
+                    durs = [len(chunk) / sr for chunk in signal_chunks]
+                    print(durs)
                 else:
                     signal_chunks = [channel_signal]
+                    durs = [dur]
 
-                for signal in signal_chunks:
+                for signal, dur in zip(signal_chunks, durs):
+
+                    if dur < self.min_duration or dur > self.max_duration:
+                        continue
+
+                    if abs(int(len(signal) - sr * dur)) > 2:
+                        print(index_element["path"])
 
                     # Determine which subdirectory to use.
                     # Calculate index for the file within its subdirectory.
@@ -381,9 +484,10 @@ class LocalLoader:
                     # Store the path to the signal and some metadata.
                     trial_info["channels"].append(channel)
                     trial_info["paths"].append(save_path)
+                    trial_info["durs"].append(dur)
+                signal_chunks.clear()
 
             # == stored data for all channels to different files
-
             trial_index[num_trials] = trial_info
             num_trials += 1
             # == stored everything for this index_element (trial) ==
