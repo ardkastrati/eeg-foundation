@@ -1,0 +1,8 @@
+{
+    "name": "MAE-Epilepsy",
+    "original_model_name": "Epilepsy Detection Model",
+    "notes" : "The model finetuned for epilepsy dection using spectrograms.",
+    "student_path": "MAE-Epilepsy/exported/epilepsy.pth",
+    "version": "1.0.0",
+    "model_type": "deeplearning"
+}
