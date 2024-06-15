@@ -1,0 +1,165 @@
+StatisticsMI_Limb==================================================
+MI_Limb
+right hand imagined movement 4.0
+both hand imagined movement 4.0
+left hand imagined movement 4.0
+na 4.0
+left foot or right foot imagined movement 4.0
+==================================================
+StatisticsMI_BBCI_IV_Berlin==================================================
+MI_BBCI_IV_Berlin
+left hand imagined movement 9.478142857142856
+left foot or right foot imagined movement 9.809050000000004
+right hand imagined movement 9.347979999999994
+==================================================
+StatisticsMI_BBCI_IV_Graz_a==================================================
+MI_BBCI_IV_Graz_a
+eye no movement eye open 112.2694117647059
+eye no movement eye closed 13.774658385093167
+eye movement eye saccade 143.24823529411765
+new run 1.4398058252427224
+tongue imagined movement 6.027194444444449
+left foot or right foot imagined movement 6.0414583333333285
+left hand imagined movement 6.03758207070707
+right hand imagined movement 6.0341875
+==================================================
+StatisticsMI_BBCI_IV_Graz_b==================================================
+MI_BBCI_IV_Graz_b
+new run 7.651068702290072
+left hand imagined movement 15.4038
+right hand imagined movement 14.502928571428571
+eye no movement eye open 64.99600000000001
+eye no movement eye closed 64.996
+eye movement eye blink 19.99599999999998
+eye movement eye saccade rotation 19.99599999999998
+eye movement eye saccade vertical 19.99599999999998
+eye movement eye saccade horizontal 17.003999999999994
+new trial 2.996
+BCI feedback 6.649918691588784
+unknown 0.49600000000000044
+==================================================
+StatisticsMI_II==================================================
+MI_II
+eye no movement fixation 3.0
+right hand imagined movement 7.0
+imagined mental word association 7.0
+imagined spatial navigation 7.0
+imagined mental subtraction 7.0
+left foot or right foot imagined movement 7.0
+==================================================
+StatisticsMI_LR==================================================
+MI_LR
+left hand imagined movement 4.997248200000001
+right hand imagined movement 4.997248200000001
+left hand movement 4.9972482000000005
+right hand movement 4.9972482000000005
+eye movement eye blink 9.9979189
+eye movement eye saccade vertical 9.9979189
+eye movement eye saccade horizontal 9.9979189
+head movement 9.9979189
+jaw clenching 9.9979189
+==================================================
+StatisticsMI_eegmmidb==================================================
+MI_eegmmidb
+rest 4.739785069353572
+right hand movement right fist open and close 4.107196246819338
+left hand movement left fist open and close 4.108156065711879
+right hand imagined movement right fist imagined open and close 4.10656530568619
+left hand imagined movement left fist imagined open and close 4.1123636744966445
+left foot or right foot movement open and close 4.108261373209773
+both hand movement both fist open and close 4.106591880341881
+left foot or right foot imagined movement open and close 4.110910343365832
+both hand imagined movement both fist imagined open and close 4.10680209213863
+faulty event description 60.89375
+==================================================
+StatisticsMI_HGD==================================================
+MI_HGD
+left hand movement sequential finger-tapping 3.9991097922848664
+right hand movement sequential finger-tapping 3.9991103202846974
+rest 3.999406528189911
+left foot or right foot movement clenching toes 3.9994068801897984
+==================================================
+StatisticsMI_Two==================================================
+MI_Two
+left foot or right foot imagined movement 10.4807373046875
+right hand imagined movement 10.483377511160715
+==================================================
+StatisticsMI_SCP==================================================
+MI_SCP
+unknown 1.30428165306866
+pinkie finger imagined movement 0.9004358774155503
+thumb imagined movement 0.9075133393016755
+middle finger imagined movement 0.9075688972667052
+index finger imagined movement 0.9123200680995701
+ring finger imagined movement 0.9079590677633936
+relax 0.7577388888888884
+rest 2.9004390182185196
+end experiment 0.8085000000000037
+passive state 0.751395951530412
+right hand imagined movement 0.7526905780005689
+left hand imagined movement 0.7513512213175204
+left foot imagined movement 0.7557860866731585
+tongue imagined movement 0.7608240654927184
+right foot imagined movement 0.7584046659952753
+left hand movement pressing key 0.7741186797752649
+right hand movement pressing key 0.7786728176011224
+no movement 0.7595064119689864
+==================================================
+StatisticsMI_GVH==================================================
+MI_GVH
+right hand movement towards object 1.1892642704570715
+right hand movement palmar grasp 2.5673232460128705
+rest nan
+right hand movement lateral grasp nan
+eye movement eye blink 9.326842206790124
+eye movement eye saccade horizontal 9.326832561728395
+eye movement eye saccade vertical 9.326832561728395
+==================================================
+StatisticsMI_GAL==================================================
+MI_GAL
+unknown 2.117624628679449
+hand movement towards object 0.29180729653882137
+hand movement touching object 0.1175474824729126
+hand movement gripping object 0.11481415174765507
+hand movement lifting object 0.24634835025380672
+hand movement lowering object 0.20253996224040316
+hand movement releasing object 0.20170667502350398
+==================================================
+StatisticsMI_ULM==================================================
+MI_ULM
+hand movement pronation 3.0
+rest 2.4893397484756097
+hand movement elbow flexion 3.0
+hand movement elbow extension 3.0
+hand movement hand opening 3.0
+hand movement supination 3.0
+hand movement hand closing 3.0
+hand movement imagined elbow flexion  3.0
+hand movement imagined elbow extension  3.0
+hand imagined movement imagined hand opening 3.0
+hand movement imagined pronation  3.0
+hand movement imagined supination  3.0
+hand imagined movement imagined hand closing 3.0
+==================================================
+StatisticsMI_SCI==================================================
+MI_SCI
+rest 2.7671175533746557
+hand imagined movement hand attempted movement imagined palmar grasp 3.9766992734593836
+hand imagined movement hand attempted movement imagined lateral grasp 3.0
+hand imagined movement hand attempted movement imagined hand opening 3.6839073503521127
+hand imagined movement hand attempted movement imagined supination 3.0
+hand imagined movement hand attempted movement imagined pronation 3.0
+eye movement eye saccade and eye blink 64.99609375
+cross and class cue 5.0
+==================================================
+StatisticsRS_ALPHA==================================================
+RS_ALPHA
+eye no movement eye closed 9.998046874347825
+eye no movement eye open 9.998046875260869
+==================================================
+StatisticsRS_SPIS==================================================
+RS_SPIS
+eye no movement eye closed 150.0
+eye no movement eye open 150.0
+==================================================
+Statistics==================================================

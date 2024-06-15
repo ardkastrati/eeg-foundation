@@ -1,0 +1,70 @@
+StatisticsMI_Limb==================================================
+MI_Limb
+==================================================
+StatisticsMI_BBCI_IV_Berlin==================================================
+MI_BBCI_IV_Berlin
+==================================================
+StatisticsMI_BBCI_IV_Graz_a==================================================
+MI_BBCI_IV_Graz_a
+eye no movement eye open 112.2694117647059
+eye no movement eye closed 13.774658385093167
+eye movement eye saccade 143.24823529411765
+==================================================
+StatisticsMI_BBCI_IV_Graz_b==================================================
+MI_BBCI_IV_Graz_b
+eye no movement eye open 64.99600000000001
+eye no movement eye closed 64.996
+eye movement eye blink 19.99599999999998
+eye movement eye saccade rotation 19.99599999999998
+eye movement eye saccade vertical 19.99599999999998
+eye movement eye saccade horizontal 17.003999999999994
+==================================================
+StatisticsMI_II==================================================
+MI_II
+eye no movement fixation 3.0
+==================================================
+StatisticsMI_LR==================================================
+MI_LR
+eye movement eye blink 9.9979189
+eye movement eye saccade vertical 9.9979189
+eye movement eye saccade horizontal 9.9979189
+==================================================
+StatisticsMI_eegmmidb==================================================
+MI_eegmmidb
+==================================================
+StatisticsMI_HGD==================================================
+MI_HGD
+==================================================
+StatisticsMI_Two==================================================
+MI_Two
+==================================================
+StatisticsMI_SCP==================================================
+MI_SCP
+==================================================
+StatisticsMI_GVH==================================================
+MI_GVH
+eye movement eye blink 9.326842206790124
+eye movement eye saccade horizontal 9.326832561728395
+eye movement eye saccade vertical 9.326832561728395
+==================================================
+StatisticsMI_GAL==================================================
+MI_GAL
+==================================================
+StatisticsMI_ULM==================================================
+MI_ULM
+==================================================
+StatisticsMI_SCI==================================================
+MI_SCI
+eye movement eye saccade and eye blink 64.99609375
+==================================================
+StatisticsRS_ALPHA==================================================
+RS_ALPHA
+eye no movement eye closed 9.998046874347825
+eye no movement eye open 9.998046875260869
+==================================================
+StatisticsRS_SPIS==================================================
+RS_SPIS
+eye no movement eye closed 150.0
+eye no movement eye open 150.0
+==================================================
+Statistics==================================================

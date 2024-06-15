@@ -1,0 +1,102 @@
+StatisticsMI_Limb==================================================
+MI_Limb
+right hand imagined movement 4.0
+both hand imagined movement 4.0
+left hand imagined movement 4.0
+==================================================
+StatisticsMI_BBCI_IV_Berlin==================================================
+MI_BBCI_IV_Berlin
+left hand imagined movement 9.478142857142856
+right hand imagined movement 9.347979999999994
+==================================================
+StatisticsMI_BBCI_IV_Graz_a==================================================
+MI_BBCI_IV_Graz_a
+left hand imagined movement 6.03758207070707
+right hand imagined movement 6.0341875
+==================================================
+StatisticsMI_BBCI_IV_Graz_b==================================================
+MI_BBCI_IV_Graz_b
+left hand imagined movement 15.4038
+right hand imagined movement 14.502928571428571
+==================================================
+StatisticsMI_II==================================================
+MI_II
+right hand imagined movement 7.0
+==================================================
+StatisticsMI_LR==================================================
+MI_LR
+left hand imagined movement 4.997248200000001
+right hand imagined movement 4.997248200000001
+left hand movement 4.9972482000000005
+right hand movement 4.9972482000000005
+==================================================
+StatisticsMI_eegmmidb==================================================
+MI_eegmmidb
+right hand movement right fist open and close 4.107196246819338
+left hand movement left fist open and close 4.108156065711879
+right hand imagined movement right fist imagined open and close 4.10656530568619
+left hand imagined movement left fist imagined open and close 4.1123636744966445
+both hand movement both fist open and close 4.106591880341881
+both hand imagined movement both fist imagined open and close 4.10680209213863
+==================================================
+StatisticsMI_HGD==================================================
+MI_HGD
+left hand movement sequential finger-tapping 3.9991097922848664
+right hand movement sequential finger-tapping 3.9991103202846974
+==================================================
+StatisticsMI_Two==================================================
+MI_Two
+right hand imagined movement 10.483377511160715
+==================================================
+StatisticsMI_SCP==================================================
+MI_SCP
+right hand imagined movement 0.7526905780005689
+left hand imagined movement 0.7513512213175204
+left hand movement pressing key 0.7741186797752649
+right hand movement pressing key 0.7786728176011224
+==================================================
+StatisticsMI_GVH==================================================
+MI_GVH
+right hand movement towards object 1.1892642704570715
+right hand movement palmar grasp 2.5673232460128705
+right hand movement lateral grasp 2.3117409605299475
+==================================================
+StatisticsMI_GAL==================================================
+MI_GAL
+hand movement towards object 0.29180729653882137
+hand movement touching object 0.1175474824729126
+hand movement gripping object 0.11481415174765507
+hand movement lifting object 0.24634835025380672
+hand movement lowering object 0.20253996224040316
+hand movement releasing object 0.20170667502350398
+==================================================
+StatisticsMI_ULM==================================================
+MI_ULM
+hand movement pronation 3.0
+hand movement elbow flexion 3.0
+hand movement elbow extension 3.0
+hand movement hand opening 3.0
+hand movement supination 3.0
+hand movement hand closing 3.0
+hand movement imagined elbow flexion  3.0
+hand movement imagined elbow extension  3.0
+hand imagined movement imagined hand opening 3.0
+hand movement imagined pronation  3.0
+hand movement imagined supination  3.0
+hand imagined movement imagined hand closing 3.0
+==================================================
+StatisticsMI_SCI==================================================
+MI_SCI
+hand imagined movement hand attempted movement imagined palmar grasp 3.9766992734593836
+hand imagined movement hand attempted movement imagined lateral grasp 3.0
+hand imagined movement hand attempted movement imagined hand opening 3.6839073503521127
+hand imagined movement hand attempted movement imagined supination 3.0
+hand imagined movement hand attempted movement imagined pronation 3.0
+==================================================
+StatisticsRS_ALPHA==================================================
+RS_ALPHA
+==================================================
+StatisticsRS_SPIS==================================================
+RS_SPIS
+==================================================
+Statistics==================================================
